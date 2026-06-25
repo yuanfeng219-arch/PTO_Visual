@@ -1,0 +1,1445 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AscendScope · 算子精度下钻调试器</title>
+<style>
+  :root{
+    --bg:#0a0e15;
+    --surface-1:#0f1622;
+    --surface-2:#151e2c;
+    --surface-3:#1c2738;
+    --surface-hi:#243248;
+    --border:#243044;
+    --border-bright:#33425a;
+    --text-1:#e8eef6;
+    --text-2:#94a3b8;
+    --text-3:#5c6a7e;
+    --pass:#3fb950;
+    --pass-dim:rgba(63,185,80,.12);
+    --pass-line:rgba(63,185,80,.35);
+    --fail:#f76d68;
+    --fail-dim:rgba(247,109,104,.12);
+    --fail-line:rgba(247,109,104,.4);
+    --warn:#e3b341;
+    --warn-dim:rgba(227,179,65,.12);
+    --warn-line:rgba(227,179,65,.38);
+    --accent:#33d6c9;
+    --accent-dim:rgba(51,214,201,.12);
+    --accent-line:rgba(51,214,201,.4);
+    --mono:'SF Mono',ui-monospace,'JetBrains Mono','Cascadia Code',Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans);
+    background:var(--bg);
+    color:var(--text-1);
+    font-size:13px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* ---------- App shell ---------- */
+  .app{
+    height:100vh;
+    display:grid;
+    grid-template-rows:48px 1fr 168px;
+    grid-template-columns:272px 1fr 336px;
+    grid-template-areas:
+      "toolbar toolbar toolbar"
+      "tree    center  inspector"
+      "tree    console inspector";
+  }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar{
+    grid-area:toolbar;
+    display:flex;align-items:center;gap:18px;
+    padding:0 16px;
+    background:linear-gradient(180deg,#101824,#0c1320);
+    border-bottom:1px solid var(--border);
+    z-index:5;
+  }
+  .brand{display:flex;align-items:center;gap:9px;flex-shrink:0}
+  .brand-mark{
+    width:24px;height:24px;border-radius:6px;position:relative;
+    background:radial-gradient(circle at 30% 30%,#3ff0e0,#1aa49a 70%);
+    box-shadow:0 0 0 1px rgba(51,214,201,.4),0 0 16px rgba(51,214,201,.25);
+  }
+  .brand-mark::after{
+    content:"";position:absolute;inset:7px;border-radius:50%;
+    border:1.5px solid #06121a;border-top-color:transparent;
+  }
+  .brand-name{font-weight:650;letter-spacing:.2px;font-size:14px}
+  .brand-name span{color:var(--accent)}
+  .toolbar-sep{width:1px;height:22px;background:var(--border)}
+
+  .run-meta{display:flex;align-items:center;gap:7px;color:var(--text-2);font-size:11.5px}
+  .chip{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 9px;border-radius:5px;font-size:11px;
+    background:var(--surface-2);border:1px solid var(--border);
+    font-family:var(--mono);color:var(--text-2);
+  }
+  .chip b{color:var(--text-1);font-weight:600}
+  .toolbar-spacer{flex:1}
+
+  .verdict-pill{
+    display:inline-flex;align-items:center;gap:7px;
+    padding:5px 12px;border-radius:6px;font-weight:600;font-size:12px;
+    color:var(--fail);background:var(--fail-dim);border:1px solid var(--fail-line);
+  }
+  .verdict-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--fail);
+    box-shadow:0 0 0 3px var(--fail-dim);animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .search-kpi{
+    display:flex;align-items:center;gap:10px;
+    padding:5px 12px;border-radius:6px;
+    background:var(--surface-2);border:1px solid var(--border-bright);
+  }
+  .search-kpi .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--text-3);line-height:1.2}
+  .search-kpi .val{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--accent);line-height:1;transition:color .3s}
+  .search-kpi .val small{font-size:10px;color:var(--text-3);font-weight:400}
+  .search-kpi .trail{font-family:var(--mono);font-size:10px;color:var(--text-3);letter-spacing:.5px}
+
+  .tool-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 11px;border-radius:6px;font-size:12px;cursor:pointer;
+    background:var(--surface-3);border:1px solid var(--border-bright);color:var(--text-1);
+    transition:.15s;font-weight:500;
+  }
+  .tool-btn:hover{background:var(--surface-hi);border-color:var(--accent-line)}
+
+  /* ---------- Tree (left) ---------- */
+  .tree{
+    grid-area:tree;
+    background:var(--surface-1);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+    overflow:hidden;
+  }
+  .panel-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px;flex-shrink:0;
+    border-bottom:1px solid var(--border);
+  }
+  .panel-head h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.9px;color:var(--text-2)}
+  .panel-head .meta{font-size:10px;color:var(--text-3);font-family:var(--mono)}
+  .tree-scroll{overflow-y:auto;flex:1;padding:6px 0 14px}
+
+  .tnode{
+    display:flex;align-items:center;gap:7px;
+    padding:5px 14px 5px 0;cursor:pointer;position:relative;
+    font-size:12.5px;color:var(--text-1);user-select:none;
+    border-left:2px solid transparent;
+  }
+  .tnode:hover{background:var(--surface-2)}
+  .tnode.sel{background:var(--accent-dim);border-left-color:var(--accent)}
+  .tnode .twist{
+    width:14px;flex-shrink:0;text-align:center;color:var(--text-3);font-size:9px;
+    transition:transform .15s;
+  }
+  .tnode.open .twist{transform:rotate(90deg)}
+  .tnode .twist.leaf{visibility:hidden}
+  .tnode .sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .tnode .tlabel{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px}
+  .tnode .tmetric{font-family:var(--mono);font-size:10px;color:var(--text-3);flex-shrink:0;padding-right:2px}
+  .sdot.pass{background:var(--pass)}
+  .sdot.fail{background:var(--fail);box-shadow:0 0 6px var(--fail)}
+  .sdot.warn{background:var(--warn)}
+  .tchildren{display:none}
+  .tchildren.open{display:block}
+  .indent-1{padding-left:14px}
+  .indent-2{padding-left:30px}
+  .indent-3{padding-left:46px}
+  .root-fail .tlabel{color:#ffb4b0;font-weight:600}
+
+  .tree-legend{
+    flex-shrink:0;border-top:1px solid var(--border);
+    padding:9px 14px;display:flex;gap:14px;font-size:10px;color:var(--text-3);
+  }
+  .tree-legend span{display:inline-flex;align-items:center;gap:5px}
+
+  /* ---------- Center ---------- */
+  .center{grid-area:center;background:var(--bg);overflow-y:auto;position:relative}
+  .breadcrumb{
+    position:sticky;top:0;z-index:3;
+    display:flex;align-items:center;gap:8px;
+    padding:11px 22px;background:rgba(10,14,21,.85);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);font-size:12px;
+  }
+  .breadcrumb .crumb{color:var(--text-2);cursor:pointer;font-family:var(--mono);font-size:11.5px}
+  .breadcrumb .crumb:hover{color:var(--accent)}
+  .breadcrumb .crumb.cur{color:var(--text-1);cursor:default}
+  .breadcrumb .sep{color:var(--text-3)}
+  .breadcrumb .level-tag{
+    margin-left:auto;font-size:10px;font-family:var(--mono);
+    padding:2px 8px;border-radius:4px;background:var(--accent-dim);color:var(--accent);
+    border:1px solid var(--accent-line);
+  }
+  .view{padding:20px 22px 40px}
+
+  .section-label{
+    font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-3);
+    margin:0 0 11px;font-weight:600;display:flex;align-items:center;gap:8px;
+  }
+  .section-label::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  .card{
+    background:var(--surface-1);border:1px solid var(--border);
+    border-radius:9px;padding:16px;
+  }
+
+  /* overview status banner */
+  .status-banner{
+    display:flex;align-items:center;gap:14px;
+    padding:14px 18px;border-radius:9px;margin-bottom:18px;
+    background:linear-gradient(90deg,var(--fail-dim),transparent 60%);
+    border:1px solid var(--fail-line);
+  }
+  .status-banner .icon{
+    width:36px;height:36px;border-radius:8px;flex-shrink:0;
+    display:grid;place-items:center;font-size:18px;
+    background:var(--fail-dim);border:1px solid var(--fail-line);color:var(--fail);
+  }
+  .status-banner h1{font-size:15px;font-weight:650;margin-bottom:2px}
+  .status-banner p{font-size:11.5px;color:var(--text-2)}
+  .status-banner .hint{
+    margin-left:auto;font-size:11px;color:var(--accent);font-family:var(--mono);
+    display:flex;align-items:center;gap:6px;
+  }
+
+  .ov-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin-bottom:18px}
+  @media(max-width:1280px){.ov-grid{grid-template-columns:1fr}}
+
+  .chart-title{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+  .chart-title h3{font-size:12.5px;font-weight:600}
+  .chart-title .sub{font-size:10.5px;color:var(--text-3);font-family:var(--mono)}
+  .legend-inline{display:flex;gap:14px;font-size:10.5px;color:var(--text-2);margin-top:10px;font-family:var(--mono)}
+  .legend-inline span{display:inline-flex;align-items:center;gap:6px}
+  .legend-inline i{width:14px;height:2.5px;border-radius:2px;display:inline-block}
+
+  .metric-stack{display:flex;flex-direction:column;gap:9px}
+  .metric-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;border-radius:7px;background:var(--surface-2);
+    border:1px solid var(--border);
+  }
+  .metric-row .k{font-size:11px;color:var(--text-2)}
+  .metric-row .v{font-family:var(--mono);font-size:15px;font-weight:600}
+  .v.bad{color:var(--fail)} .v.ok{color:var(--pass)} .v.mid{color:var(--warn)}
+  .metric-row .v small{font-size:10px;color:var(--text-3);font-weight:400}
+
+  /* layer bar chart */
+  .layerchart-wrap{margin-bottom:6px}
+  .layerchart{
+    display:flex;align-items:flex-end;gap:3px;height:150px;
+    padding:14px 6px 0;position:relative;
+  }
+  .lbar{
+    flex:1;min-width:0;border-radius:3px 3px 0 0;cursor:pointer;position:relative;
+    transition:.15s;min-height:3px;
+  }
+  .lbar:hover{filter:brightness(1.35)}
+  .lbar.pass{background:linear-gradient(180deg,var(--pass),rgba(63,185,80,.4))}
+  .lbar.fail{background:linear-gradient(180deg,#ff7b76,var(--fail));box-shadow:0 0 14px var(--fail-line)}
+  .lbar.warn{background:linear-gradient(180deg,var(--warn),rgba(227,179,65,.45))}
+  .lbar.sel{outline:2px solid var(--accent);outline-offset:1px}
+  .lbar .baxis{
+    position:absolute;bottom:-17px;left:50%;transform:translateX(-50%);
+    font-size:8px;color:var(--text-3);font-family:var(--mono);
+  }
+  .layer-axis-row{display:flex;justify-content:space-between;margin-top:22px;padding:0 6px;
+    font-size:9px;color:var(--text-3);font-family:var(--mono)}
+  .first-deg-marker{
+    position:absolute;top:-2px;transform:translateX(-50%);
+    font-size:9.5px;color:var(--fail);font-family:var(--mono);white-space:nowrap;
+    display:flex;flex-direction:column;align-items:center;gap:1px;font-weight:600;
+  }
+  .first-deg-marker::after{content:"▼";font-size:8px}
+
+  .bar-tip{
+    position:fixed;z-index:50;pointer-events:none;opacity:0;transition:opacity .12s;
+    background:#05090f;border:1px solid var(--border-bright);border-radius:6px;
+    padding:7px 10px;font-family:var(--mono);font-size:10.5px;color:var(--text-1);
+    box-shadow:0 8px 24px rgba(0,0,0,.5);white-space:nowrap;
+  }
+  .bar-tip .tk{color:var(--text-3)}
+
+  /* ---------- Block operator dataflow ---------- */
+  .flow{display:flex;flex-direction:column;gap:0;position:relative;margin-top:4px}
+  .op-row{
+    display:flex;align-items:center;gap:0;position:relative;
+  }
+  .op-card{
+    flex:1;display:flex;align-items:center;gap:12px;
+    padding:11px 14px;border-radius:8px;cursor:pointer;
+    background:var(--surface-1);border:1px solid var(--border);
+    transition:.15s;position:relative;
+  }
+  .op-card:hover{border-color:var(--border-bright);background:var(--surface-2)}
+  .op-card.sel{border-color:var(--accent);background:var(--accent-dim)}
+  .op-card.root{border-color:var(--fail-line);background:var(--fail-dim)}
+  .op-card.root:hover{background:rgba(247,109,104,.18)}
+  .op-bp{
+    width:14px;height:14px;border-radius:50%;flex-shrink:0;cursor:pointer;
+    border:1.5px solid var(--text-3);background:transparent;transition:.15s;position:relative;
+  }
+  .op-card.root .op-bp{border-color:var(--fail)}
+  .op-bp.set{background:var(--fail);border-color:var(--fail);box-shadow:0 0 8px var(--fail)}
+  .op-bp.set::after{content:"";position:absolute;inset:3px;border-radius:50%;background:#fff;opacity:.85}
+  .op-info{flex:1;min-width:0}
+  .op-name{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-1)}
+  .op-type{font-family:var(--mono);font-size:10px;color:var(--text-3);margin-top:1px}
+  .op-stat{display:flex;align-items:center;gap:14px;flex-shrink:0}
+  .op-cos{font-family:var(--mono);font-size:12.5px;font-weight:600;text-align:right}
+  .op-cos small{display:block;font-size:8.5px;color:var(--text-3);font-weight:400;letter-spacing:.5px}
+  .cos-pass{color:var(--pass)} .cos-fail{color:var(--fail)} .cos-warn{color:var(--warn)}
+  .badge{
+    font-family:var(--mono);font-size:9.5px;padding:3px 8px;border-radius:5px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.5px;
+  }
+  .badge.pass{color:var(--pass);background:var(--pass-dim);border:1px solid var(--pass-line)}
+  .badge.fail{color:var(--fail);background:var(--fail-dim);border:1px solid var(--fail-line)}
+  .badge.warn{color:var(--warn);background:var(--warn-dim);border:1px solid var(--warn-line)}
+  .flow-connector{height:10px;width:2px;background:var(--border-bright);margin-left:21px}
+  .flow-connector.bad{background:var(--fail-line)}
+  .root-flag{
+    position:absolute;right:-8px;top:50%;transform:translateY(-50%) translateX(100%);
+    font-size:10px;color:var(--fail);font-family:var(--mono);white-space:nowrap;font-weight:600;
+    display:none;
+  }
+  @media(min-width:1500px){.root-flag{display:block}}
+
+  .block-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  .bs-card{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+  .bs-card .bk{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+  .bs-card .bv{font-family:var(--mono);font-size:17px;font-weight:600}
+
+  .generic-block{text-align:center;padding:40px 20px}
+  .generic-block .gi{font-size:34px;margin-bottom:10px}
+  .generic-block h3{font-size:15px;margin-bottom:6px}
+  .generic-block p{color:var(--text-2);font-size:12px;max-width:440px;margin:0 auto 16px}
+  .generic-block .gmetrics{display:inline-flex;gap:22px;padding:14px 24px;background:var(--surface-1);
+    border:1px solid var(--border);border-radius:9px}
+  .generic-block .gm{text-align:center}
+  .generic-block .gm .k{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px}
+  .generic-block .gm .v{font-family:var(--mono);font-size:16px;font-weight:600;margin-top:3px}
+
+  /* ---------- Operator inspector / breakpoint ---------- */
+  .op-header{
+    display:flex;align-items:center;gap:14px;margin-bottom:16px;
+    padding:14px 16px;border-radius:9px;background:var(--surface-1);border:1px solid var(--border);
+  }
+  .op-header.root{border-color:var(--fail-line);background:linear-gradient(90deg,var(--fail-dim),transparent 70%)}
+  .op-header .oh-icon{width:38px;height:38px;border-radius:8px;display:grid;place-items:center;
+    font-family:var(--mono);font-weight:700;font-size:15px;flex-shrink:0;
+    background:var(--fail-dim);color:var(--fail);border:1px solid var(--fail-line)}
+  .op-header .oh-icon.ok{background:var(--pass-dim);color:var(--pass);border-color:var(--pass-line)}
+  .op-header h2{font-family:var(--mono);font-size:15px;font-weight:650}
+  .op-header .oh-sub{font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:2px}
+  .op-header .oh-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+  .tensor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  .tio{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:13px 15px}
+  .tio h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--text-3);margin-bottom:10px;
+    display:flex;align-items:center;gap:7px}
+  .tio h4 .d{width:6px;height:6px;border-radius:50%}
+  .tio-row{display:flex;justify-content:space-between;padding:4px 0;font-family:var(--mono);font-size:11.5px;
+    border-bottom:1px solid rgba(255,255,255,.03)}
+  .tio-row:last-child{border-bottom:none}
+  .tio-row .tk{color:var(--text-3)}
+  .tio-row .tv{color:var(--text-1)}
+  .tio-row .tv.warn{color:var(--warn)} .tio-row .tv.bad{color:var(--fail)}
+
+  .bp-console{
+    background:var(--surface-1);border:1px solid var(--border-bright);border-radius:9px;
+    padding:16px;margin-bottom:16px;
+  }
+  .bp-console .bpc-head{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+  .bp-console .bpc-head .t{font-size:12px;font-weight:600}
+  .bp-console .bpc-head .badge{margin-left:auto}
+  .bp-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .bp-btn{
+    display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:7px;
+    cursor:pointer;font-size:12px;font-weight:600;transition:.15s;border:1px solid;
+  }
+  .bp-btn.primary{background:var(--accent-dim);color:var(--accent);border-color:var(--accent-line)}
+  .bp-btn.primary:hover{background:rgba(51,214,201,.2)}
+  .bp-btn.ghost{background:var(--surface-3);color:var(--text-1);border-color:var(--border-bright)}
+  .bp-btn.ghost:hover{background:var(--surface-hi)}
+  .bp-btn:disabled{opacity:.4;cursor:not-allowed}
+  .bp-btn .ic{font-family:var(--mono);font-size:13px}
+
+  .replay-result{margin-top:15px;display:none}
+  .replay-result.show{display:block;animation:fadeUp .35s ease}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .compare-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:13px}
+  .cmp-col{border-radius:8px;padding:13px 15px;border:1px solid}
+  .cmp-col.npu{background:var(--fail-dim);border-color:var(--fail-line)}
+  .cmp-col.ref{background:var(--pass-dim);border-color:var(--pass-line)}
+  .cmp-col .cc-head{display:flex;align-items:center;gap:8px;margin-bottom:11px;font-weight:600;font-size:11.5px}
+  .cmp-col.npu .cc-head{color:var(--fail)} .cmp-col.ref .cc-head{color:var(--pass)}
+  .cmp-col .cc-head .tag{margin-left:auto;font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;
+    background:rgba(0,0,0,.25);text-transform:uppercase;letter-spacing:.5px}
+  .cc-row{display:flex;justify-content:space-between;padding:5px 0;font-family:var(--mono);font-size:11.5px}
+  .cc-row .ck{color:var(--text-2)}
+  .cc-row .cv{font-weight:600}
+  .cc-row .cv.inf{color:var(--fail)} .cc-row .cv.fin{color:var(--pass)}
+
+  .row-viz{margin-top:8px;padding-top:10px;border-top:1px dashed var(--border)}
+  .row-viz .rv-label{font-size:9.5px;color:var(--text-3);font-family:var(--mono);margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px}
+  .rv-cells{display:flex;gap:3px}
+  .rv-cell{flex:1;height:26px;border-radius:3px;display:grid;place-items:center;
+    font-family:var(--mono);font-size:9px;color:#06121a;font-weight:700}
+
+  .verdict-box{
+    display:flex;align-items:flex-start;gap:13px;padding:14px 16px;border-radius:9px;
+    border:1px solid var(--fail-line);background:var(--fail-dim);
+  }
+  .verdict-box .vb-icon{font-size:20px;flex-shrink:0;line-height:1.2}
+  .verdict-box h4{font-size:13px;font-weight:650;color:var(--fail);margin-bottom:4px}
+  .verdict-box p{font-size:11.5px;color:var(--text-2);line-height:1.55}
+  .verdict-box p b{color:var(--text-1)}
+  .verdict-box.ok{border-color:var(--pass-line);background:var(--pass-dim)}
+  .verdict-box.ok h4{color:var(--pass)}
+
+  .upstream-check{margin-top:14px;display:none}
+  .upstream-check.show{display:block;animation:fadeUp .35s ease}
+  .upstream-card{display:flex;align-items:center;gap:13px;padding:12px 15px;border-radius:8px;
+    background:var(--pass-dim);border:1px solid var(--pass-line)}
+  .upstream-card .uc-icon{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+    background:rgba(63,185,80,.18);color:var(--pass);flex-shrink:0;font-family:var(--mono);font-weight:700}
+  .upstream-card .uc-body{flex:1}
+  .upstream-card .uc-name{font-family:var(--mono);font-size:12px;font-weight:600}
+  .upstream-card .uc-desc{font-size:11px;color:var(--text-2);margin-top:2px}
+  .upstream-card .uc-metric{font-family:var(--mono);font-size:13px;color:var(--pass);font-weight:600;text-align:right}
+  .upstream-card .uc-metric small{display:block;font-size:9px;color:var(--text-3);font-weight:400}
+
+  /* root cause report */
+  .report{display:none}
+  .report.show{display:block;animation:fadeUp .4s ease}
+  .report-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .report-head .rh-badge{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:5px;
+    background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-line);font-weight:600;letter-spacing:.5px}
+  .report-head h2{font-size:17px;font-weight:650}
+  .rep-section{margin-bottom:16px}
+  .rep-section .rs-label{font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--accent);
+    font-weight:600;margin-bottom:9px;font-family:var(--mono)}
+  .rep-kv{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .rep-kv .kv{display:flex;padding:10px 15px;border-bottom:1px solid var(--border);font-size:12px}
+  .rep-kv .kv:last-child{border-bottom:none}
+  .rep-kv .kv .kk{width:120px;flex-shrink:0;color:var(--text-3);font-family:var(--mono);font-size:11px}
+  .rep-kv .kv .kv-val{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--text-1)}
+  .rep-kv .kv .kv-val b{color:var(--fail)}
+  .rep-kv .kv .kv-val .em{color:var(--accent)}
+
+  .prop-chain{display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+    padding:14px 16px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;
+    font-family:var(--mono);font-size:11px}
+  .prop-chain .pstep{padding:5px 10px;border-radius:5px;background:var(--surface-3);white-space:nowrap}
+  .prop-chain .pstep.bad{background:var(--fail-dim);color:var(--fail);border:1px solid var(--fail-line)}
+  .prop-chain .pstep.warn{background:var(--warn-dim);color:var(--warn);border:1px solid var(--warn-line)}
+  .prop-chain .parrow{color:var(--text-3)}
+
+  .fix-list{display:flex;flex-direction:column;gap:9px}
+  .fix-item{display:flex;gap:12px;padding:12px 15px;background:var(--surface-1);
+    border:1px solid var(--border);border-radius:8px;border-left:3px solid var(--accent)}
+  .fix-item .fnum{font-family:var(--mono);font-weight:700;color:var(--accent);flex-shrink:0}
+  .fix-item .ftext{font-size:12px;line-height:1.55;color:var(--text-1)}
+  .fix-item .ftext code{font-family:var(--mono);background:var(--surface-3);padding:1px 6px;border-radius:4px;
+    font-size:11px;color:var(--accent)}
+
+  /* ---------- Inspector (right) ---------- */
+  .inspector{
+    grid-area:inspector;background:var(--surface-1);border-left:1px solid var(--border);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .insp-scroll{overflow-y:auto;flex:1}
+  .insp-block{padding:14px 16px;border-bottom:1px solid var(--border)}
+  .insp-block h3{font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--text-3);
+    margin-bottom:11px;font-weight:600}
+  .insp-target{display:flex;align-items:center;gap:10px}
+  .insp-target .it-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .insp-target .it-name{font-family:var(--mono);font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+  .insp-target .it-type{font-family:var(--mono);font-size:10px;color:var(--text-3)}
+
+  .insp-metrics{display:flex;flex-direction:column;gap:1px}
+  .im-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
+  .im-row .imk{font-size:11px;color:var(--text-2)}
+  .im-row .imv{font-family:var(--mono);font-size:13px;font-weight:600}
+  .im-bar{height:4px;border-radius:2px;background:var(--surface-3);margin-top:5px;overflow:hidden}
+  .im-bar i{display:block;height:100%;border-radius:2px;transition:width .4s}
+
+  .conv-track{padding:14px 16px}
+  .conv-step{display:flex;align-items:center;gap:10px;padding:7px 0;position:relative}
+  .conv-step .cs-node{width:11px;height:11px;border-radius:50%;flex-shrink:0;z-index:2;
+    border:2px solid var(--surface-1)}
+  .conv-step::before{content:"";position:absolute;left:5px;top:50%;bottom:-7px;width:1px;background:var(--border-bright)}
+  .conv-step:last-child::before{display:none}
+  .conv-step .cs-body{flex:1}
+  .conv-step .cs-lvl{font-family:var(--mono);font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px}
+  .conv-step .cs-name{font-family:var(--mono);font-size:11.5px;color:var(--text-2)}
+  .conv-step .cs-count{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text-1)}
+  .conv-step.done .cs-node{background:var(--accent)} .conv-step.done .cs-name{color:var(--text-1)}
+  .conv-step.cur .cs-node{background:var(--accent);box-shadow:0 0 0 4px var(--accent-dim)}
+  .conv-step.pending .cs-node{background:var(--surface-3)}
+
+  .callstack{font-family:var(--mono);font-size:10.5px;line-height:1.7;color:var(--text-2)}
+  .callstack .cs-line{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .callstack .cs-line .fn{color:var(--accent)}
+  .callstack .cs-line .loc{color:var(--text-3)}
+
+  /* ---------- Console (bottom) ---------- */
+  .console{
+    grid-area:console;background:var(--surface-1);border-top:1px solid var(--border);
+    border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;
+  }
+  .console-head{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .console-head h3{font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--text-2);font-weight:600}
+  .console-head .tabs{display:flex;gap:4px;margin-left:6px}
+  .console-head .ctab{font-size:11px;padding:3px 10px;border-radius:5px;color:var(--text-3);cursor:default}
+  .console-head .ctab.active{background:var(--surface-3);color:var(--text-1)}
+  .console-head .cclear{margin-left:auto;font-size:10px;color:var(--text-3);font-family:var(--mono)}
+  .console-log{flex:1;overflow-y:auto;padding:8px 16px 12px;font-family:var(--mono);font-size:11px}
+  .log-line{display:flex;gap:11px;padding:3px 0;align-items:baseline;animation:logIn .25s ease}
+  @keyframes logIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+  .log-line .lt{color:var(--text-3);flex-shrink:0;font-size:10px}
+  .log-line .ll{flex:1;color:var(--text-2)}
+  .log-line .ll .hl{color:var(--text-1);font-weight:600}
+  .log-line.ev-drill .ll::before{content:"⌖ ";color:var(--accent)}
+  .log-line.ev-bp .ll::before{content:"● ";color:var(--fail)}
+  .log-line.ev-replay .ll::before{content:"▷ ";color:var(--accent)}
+  .log-line.ev-ok .ll::before{content:"✓ ";color:var(--pass)}
+  .log-line.ev-root .ll{color:var(--fail);font-weight:600}
+  .log-line.ev-root .ll::before{content:"⚑ "}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--surface-hi);border-radius:5px;border:2px solid var(--surface-1)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-bright)}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== Toolbar ===== -->
+  <header class="toolbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">Ascend<span>Scope</span></div>
+    </div>
+    <div class="toolbar-sep"></div>
+    <div class="run-meta">
+      <span class="chip"><b>GPT-7B</b></span>
+      <span class="chip">fp16</span>
+      <span class="chip">CANN 8.0 · 910B</span>
+      <span class="chip">基准 <b>GPU fp32</b></span>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <div class="search-kpi">
+      <div class="lbl">搜索<br>空间</div>
+      <div>
+        <div class="val" id="kpiVal">1,216<small> 算子</small></div>
+      </div>
+      <div class="trail" id="kpiTrail">整网</div>
+    </div>
+    <div class="verdict-pill"><span class="dot"></span>精度异常</div>
+    <div class="tool-btn" onclick="resetAll()"><span class="mono">↻</span> 重新比对</div>
+  </header>
+
+  <!-- ===== Model tree (left) ===== -->
+  <aside class="tree">
+    <div class="panel-head">
+      <h2>模型结构</h2>
+      <span class="meta" id="treeMeta">construct.json</span>
+    </div>
+    <div class="tree-scroll" id="treeScroll"></div>
+    <div class="tree-legend">
+      <span><i class="sdot pass"></i>达标</span>
+      <span><i class="sdot warn"></i>劣化</span>
+      <span><i class="sdot fail"></i>失败</span>
+    </div>
+  </aside>
+
+  <!-- ===== Center workspace ===== -->
+  <main class="center">
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="view" id="view"></div>
+  </main>
+
+  <!-- ===== Inspector (right) ===== -->
+  <aside class="inspector">
+    <div class="panel-head">
+      <h2>指标检视器</h2>
+      <span class="meta">L0 / L1 / L2</span>
+    </div>
+    <div class="insp-scroll" id="inspector"></div>
+  </aside>
+
+  <!-- ===== Console (bottom) ===== -->
+  <footer class="console">
+    <div class="console-head">
+      <h3>调查日志</h3>
+      <div class="tabs">
+        <span class="ctab active">下钻轨迹</span>
+      </div>
+      <span class="cclear" id="logCount">0 步</span>
+    </div>
+    <div class="console-log" id="consoleLog"></div>
+  </footer>
+
+</div>
+
+<div class="bar-tip" id="barTip"></div>
+
+<script>
+/* ============================================================
+   AscendScope — 数据模型 (纯前端模拟,案例: fp16 fused softmax 上溢)
+   ============================================================ */
+
+// 32 层 transformer block 的整网逐层比对结果 (cos = 余弦相似度)
+const NUM_BLOCKS = 32;
+const blocks = [];
+for(let i=0;i<NUM_BLOCKS;i++){
+  let cos, status;
+  if(i<11){                       // 0~10: 干净
+    cos = 0.999985 - i*0.0000025;
+    status = 'pass';
+  }else if(i===11){               // 11: 首个劣化层 (根因所在)
+    cos = 0.421; status = 'fail';
+  }else{                          // 12~31: 上游传播
+    cos = 0.58 - (i-12)*0.006 + (i%3)*0.012;
+    status = 'warn';
+  }
+  blocks.push({idx:i, cos, status, err:1-cos});
+}
+
+// Block 11 内部算子数据流 (按执行顺序)。首个 fail = softmax
+const block11Ops = [
+  {id:'op-norm1',  name:'input_layernorm',        type:'LayerNorm',           cos:0.999985, maxRel:8.1e-5, status:'pass'},
+  {id:'op-qkv',    name:'attention.query_key_value',type:'MatMul',            cos:0.999812, maxRel:3.0e-4, status:'pass'},
+  {id:'op-rope',   name:'attention.rotary_pos_emb', type:'RoPE · Mul',        cos:0.999921, maxRel:1.4e-4, status:'pass'},
+  {id:'op-bmmqk',  name:'attention.bmm_qk',         type:'BatchMatMul',       cos:0.999751, maxRel:3.1e-4, status:'pass', upstream:true},
+  {id:'op-scale',  name:'attention.scale',          type:'Muls',              cos:0.999998, maxRel:1.1e-5, status:'pass'},
+  {id:'op-mask',   name:'attention.attention_mask', type:'MaskedFill',        cos:0.999970, maxRel:2.0e-5, status:'pass'},
+  {id:'op-softmax',name:'attention.softmax',        type:'SoftmaxV2 · 融合',   cos:0.421,    maxRel:Infinity, status:'fail', root:true},
+  {id:'op-bmmctx', name:'attention.bmm_context',    type:'BatchMatMul',       cos:0.552,    maxRel:0.84, status:'fail'},
+  {id:'op-dense',  name:'attention.dense',          type:'MatMul',            cos:0.581,    maxRel:0.79, status:'fail'},
+  {id:'op-res1',   name:'post_attention_residual',  type:'Add',               cos:0.604,    maxRel:0.71, status:'fail'},
+  {id:'op-norm2',  name:'post_attention_layernorm', type:'LayerNorm',         cos:0.612,    maxRel:0.66, status:'warn'},
+  {id:'op-mlp1',   name:'mlp.dense_h_to_4h',        type:'MatMul',            cos:0.598,    maxRel:0.69, status:'warn'},
+  {id:'op-swiglu', name:'mlp.activation',           type:'SwiGLU',            cos:0.605,    maxRel:0.67, status:'warn'},
+  {id:'op-mlp2',   name:'mlp.dense_4h_to_h',        type:'MatMul',            cos:0.609,    maxRel:0.65, status:'warn'},
+  {id:'op-res2',   name:'mlp_residual',             type:'Add',               cos:0.611,    maxRel:0.64, status:'warn'},
+];
+
+// 各算子的张量与复算详情
+const opDetail = {
+  'op-softmax':{
+    inShape:'[1, 32, 1024, 1024]', inDtype:'float16', inFormat:'ND',
+    inStats:{max:'14.72', min:'-9.31', mean:'0.83'},
+    outShape:'[1, 32, 1024, 1024]', outDtype:'float16',
+    stack:[
+      {fn:'SoftmaxV2', loc:'aclnn_softmax.cpp:218'},
+      {fn:'FlashAttentionScore', loc:'fused_attn.cc:91'},
+      {fn:'CoreAttention.forward', loc:'attention.py:147'},
+      {fn:'GPTBlock.forward', loc:'transformer.py:412'},
+    ],
+    replay:{
+      npu:{label:'NPU · SoftmaxV2(融合)',tag:'NPU 910B',rows:[
+        ['exp(max=14.72)','2.47e6',  'inf'],
+        ['fp16 上限','65504', ''],
+        ['inf 元素数','1', 'inf'],
+        ['nan 行数','1', 'inf'],
+        ['行和 Σ','nan', 'inf'],
+      ]},
+      ref:{label:'基准 · safe-softmax(减 rowmax)',tag:'GPU fp32',rows:[
+        ['exp(max-max)','1.000', 'fin'],
+        ['fp32 上限','3.4e38', ''],
+        ['inf 元素数','0', 'fin'],
+        ['max 概率','0.971', 'fin'],
+        ['行和 Σ','1.0000', 'fin'],
+      ]},
+      verdict:'impl'
+    }
+  },
+  'op-bmmqk':{
+    inShape:'[1, 32, 1024, 128]', inDtype:'float16', inFormat:'ND',
+    inStats:{max:'4.18', min:'-3.92', mean:'0.02'},
+    outShape:'[1, 32, 1024, 1024]', outDtype:'float16',
+    stack:[
+      {fn:'BatchMatMul', loc:'aclnn_bmm.cpp:144'},
+      {fn:'CoreAttention.forward', loc:'attention.py:131'},
+      {fn:'GPTBlock.forward', loc:'transformer.py:412'},
+    ],
+    replay:{pass:true, cos:'0.99975', maxRel:'3.1e-4'}
+  }
+};
+
+// 整网级指标
+const netMetrics = {
+  logitsCos:0.612, firstDeg:11, maxRel:'∞', overflow:1, eb:0.42
+};
+
+/* ============================================================
+   状态
+   ============================================================ */
+let state = {
+  selection:'overview',     // 'overview' | 'block-N' | opId
+  breakpoints:new Set(),
+  replayDone:false,
+  upstreamDone:false,
+  reportDone:false,
+  convLevel:0,              // 0 整网, 1 block, 2 op, 3 element
+  logSeq:0, logT:0
+};
+
+const blockMeta = {
+  'overview':{label:'GPTModel',crumb:['GPTModel'],level:'L0 · 整网'},
+};
+
+/* ============================================================
+   渲染: 模型结构树
+   ============================================================ */
+function renderTree(){
+  const el = document.getElementById('treeScroll');
+  let h = '';
+  // root
+  const rootSel = state.selection==='overview' ? 'sel' : '';
+  h += `<div class="tnode root-fail ${rootSel}" onclick="selectNode('overview')">
+    <span class="twist leaf"></span>
+    <span class="sdot fail"></span>
+    <span class="tlabel">GPTModel</span>
+    <span class="tmetric">整网</span>
+  </div>`;
+  // embedding (leaf, pass)
+  h += `<div class="tnode indent-1" onclick="selectNode('block--1')">
+    <span class="twist leaf"></span><span class="sdot pass"></span>
+    <span class="tlabel">word_embeddings</span><span class="tmetric">1.0000</span>
+  </div>`;
+  // layers group (always open)
+  h += `<div class="tnode indent-1 open" style="cursor:default">
+    <span class="twist">▶</span><span class="sdot fail"></span>
+    <span class="tlabel">layers</span><span class="tmetric">×32</span>
+  </div>`;
+
+  // each block
+  for(const b of blocks){
+    const isSel = state.selection===`block-${b.idx}`;
+    const isOpen = b.idx===11 && (state.selection===`block-11` || isOpInBlock11(state.selection));
+    const rootCls = b.idx===11 ? 'root-fail' : '';
+    h += `<div class="tnode indent-2 ${isSel?'sel':''} ${isOpen?'open':''} ${rootCls}" onclick="selectNode('block-${b.idx}')">
+      <span class="twist ${b.idx===11?'':'leaf'}">▶</span>
+      <span class="sdot ${b.status}"></span>
+      <span class="tlabel">${b.idx}${b.idx===11?'':''}</span>
+      <span class="tmetric">${b.cos.toFixed(4)}</span>
+    </div>`;
+    // block 11 expanded ops
+    if(b.idx===11){
+      const opsOpen = (state.selection===`block-11` || isOpInBlock11(state.selection));
+      h += `<div class="tchildren ${opsOpen?'open':''}">`;
+      for(const op of block11Ops){
+        const sel = state.selection===op.id ? 'sel':'';
+        const root = op.root ? 'root-fail':'';
+        h += `<div class="tnode indent-3 ${sel} ${root}" onclick="selectNode('${op.id}')">
+          <span class="twist leaf"></span>
+          <span class="sdot ${op.status}"></span>
+          <span class="tlabel">${op.name.split('.').pop()}</span>
+          <span class="tmetric">${op.cos===0.421?'.42':op.cos.toFixed(3)}</span>
+        </div>`;
+      }
+      h += `</div>`;
+    }
+  }
+  // output layer
+  h += `<div class="tnode indent-1" onclick="selectNode('block-out')">
+    <span class="twist leaf"></span><span class="sdot warn"></span>
+    <span class="tlabel">final_layernorm</span><span class="tmetric">0.61</span>
+  </div>`;
+  h += `<div class="tnode indent-1" onclick="selectNode('block-out')">
+    <span class="twist leaf"></span><span class="sdot warn"></span>
+    <span class="tlabel">lm_head</span><span class="tmetric">0.61</span>
+  </div>`;
+  el.innerHTML = h;
+}
+function isOpInBlock11(sel){ return block11Ops.some(o=>o.id===sel); }
+
+/* ============================================================
+   渲染: 面包屑
+   ============================================================ */
+function renderBreadcrumb(){
+  const el = document.getElementById('breadcrumb');
+  let crumbs = [{t:'GPTModel',sel:'overview'}];
+  let level = 'L0 · 整网比对';
+  const s = state.selection;
+  if(s.startsWith('block-') && s!=='block--1' && s!=='block-out'){
+    const idx = s.split('-')[1];
+    crumbs.push({t:'layers',sel:null});
+    crumbs.push({t:`block.${idx}`,sel:`block-${idx}`});
+    level = 'L1 · 算子级比对';
+  }else if(isOpInBlock11(s)){
+    const op = block11Ops.find(o=>o.id===s);
+    crumbs.push({t:'layers',sel:null});
+    crumbs.push({t:'block.11',sel:'block-11'});
+    crumbs.push({t:op.name.split('.').pop(),sel:s});
+    level = 'L2 · 算子断点 / 复算';
+  }else if(s==='block--1'){ crumbs.push({t:'word_embeddings',sel:null}); }
+  else if(s==='block-out'){ crumbs.push({t:'output',sel:null}); }
+
+  let h='';
+  crumbs.forEach((c,i)=>{
+    if(i>0) h+=`<span class="sep">/</span>`;
+    const cur = i===crumbs.length-1 ? 'cur':'';
+    h+=`<span class="crumb ${cur}" ${c.sel?`onclick="selectNode('${c.sel}')"`:''}>${c.t}</span>`;
+  });
+  h+=`<span class="level-tag">${level}</span>`;
+  el.innerHTML=h;
+}
+
+/* ============================================================
+   渲染: 中央视图
+   ============================================================ */
+function renderCenter(){
+  const el = document.getElementById('view');
+  const s = state.selection;
+  if(s==='overview'){ el.innerHTML = viewOverview(); afterOverview(); }
+  else if(s==='block-11'){ el.innerHTML = viewBlock11(); }
+  else if(s==='block--1'){ el.innerHTML = viewGenericBlock('word_embeddings','VocabEmbedding','pass',1.0000,'8.0e-6'); }
+  else if(s==='block-out'){ el.innerHTML = viewGenericBlock('output (final_norm + lm_head)','Linear','warn',0.611,'0.64'); }
+  else if(s.startsWith('block-')){
+    const idx = parseInt(s.split('-')[1]);
+    const b = blocks[idx];
+    const st = b.status==='pass'?'pass':'warn';
+    viewGenericBlockFor(b);
+    el.innerHTML = viewGenericBlock(`layers.${idx}`, 'GPTBlock (Attention + MLP)', st, b.cos, b.status==='pass'?'~3e-4':b.maxRel?.toFixed?.(2)||'0.7');
+  }
+  else if(isOpInBlock11(s)){ el.innerHTML = viewOperator(s); afterOperator(s); }
+}
+
+/* ---------- Overview ---------- */
+function viewOverview(){
+  // metric rows
+  const m = netMetrics;
+  return `
+  <div class="status-banner">
+    <div class="icon">!</div>
+    <div>
+      <h1>整网精度比对未通过</h1>
+      <p>NPU 训练 loss 与 GPU 基准分叉 · 单步 dump 逐层比对发现 logits 余弦相似度 ${m.logitsCos.toFixed(3)},检出 1 处 fp16 溢出</p>
+    </div>
+    <div class="hint">↓ 点击最高的误差柱下钻</div>
+  </div>
+
+  <div class="ov-grid">
+    <div class="card">
+      <div class="chart-title">
+        <h3>训练 Loss · NPU vs 基准</h3>
+        <span class="sub">step 0–60</span>
+      </div>
+      <div id="lossChart"></div>
+      <div class="legend-inline">
+        <span><i style="background:var(--pass)"></i>GPU fp32 基准</span>
+        <span><i style="background:var(--fail)"></i>NPU fp16</span>
+        <span style="color:var(--text-3)">step 26 起分叉</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chart-title"><h3>整网指标</h3><span class="sub">L0</span></div>
+      <div class="metric-stack">
+        <div class="metric-row"><span class="k">logits 余弦相似度</span><span class="v bad">${m.logitsCos.toFixed(3)}</span></div>
+        <div class="metric-row"><span class="k">首个劣化层</span><span class="v bad">block.${m.firstDeg}</span></div>
+        <div class="metric-row"><span class="k">最大相对误差</span><span class="v bad">${m.maxRel}</span></div>
+        <div class="metric-row"><span class="k">溢出元素数</span><span class="v bad">${m.overflow} <small>(fp16)</small></span></div>
+        <div class="metric-row"><span class="k">误差均衡度 EB</span><span class="v mid">${m.eb}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chart-title">
+      <h3>逐层误差分布 · (1 − 余弦相似度)</h3>
+      <span class="sub">32 layers · 点击柱体下钻 L1</span>
+    </div>
+    <div class="layerchart-wrap">
+      <div class="layerchart" id="layerChart"></div>
+      <div class="layer-axis-row"><span>block 0</span><span>block 11</span><span>block 31</span></div>
+    </div>
+  </div>`;
+}
+
+function afterOverview(){
+  drawLossChart();
+  drawLayerChart();
+}
+
+function drawLossChart(){
+  const box = document.getElementById('lossChart');
+  if(!box) return;
+  const W=420,H=170,pad=8;
+  const pts=[];
+  for(let s=0;s<=60;s++){
+    const gpu = 0.72 + 3.3*Math.exp(-s/11);
+    let npu;
+    if(s<26) npu = gpu + 0.02*Math.sin(s/3);
+    else npu = (0.72+3.3*Math.exp(-26/11)) + 0.035*(s-26) - 0.05*Math.exp(-(s-26)/8);
+    pts.push({s,gpu,npu});
+  }
+  const allV = pts.flatMap(p=>[p.gpu,p.npu]);
+  const maxV=Math.max(...allV), minV=Math.min(...allV);
+  const X=s=> pad + (s/60)*(W-2*pad);
+  const Y=v=> pad + (1-(v-minV)/(maxV-minV))*(H-2*pad);
+  const path=(key)=> pts.map((p,i)=>`${i?'L':'M'}${X(p.s).toFixed(1)},${Y(p[key]).toFixed(1)}`).join(' ');
+  // grid lines
+  let grid='';
+  for(let g=0;g<=3;g++){const yy=pad+g/3*(H-2*pad);grid+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 4"/>`;}
+  const splitX=X(26);
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
+    ${grid}
+    <line x1="${splitX}" y1="${pad}" x2="${splitX}" y2="${H-pad}" stroke="var(--fail-line)" stroke-width="1" stroke-dasharray="3 3"/>
+    <path d="${path('gpu')}" fill="none" stroke="var(--pass)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="${path('npu')}" fill="none" stroke="var(--fail)" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${X(60)}" cy="${Y(pts[60].npu)}" r="3" fill="var(--fail)"/>
+    <circle cx="${X(60)}" cy="${Y(pts[60].gpu)}" r="3" fill="var(--pass)"/>
+  </svg>`;
+}
+
+function drawLayerChart(){
+  const box = document.getElementById('layerChart');
+  if(!box) return;
+  const maxErr = Math.max(...blocks.map(b=>b.err));
+  let h='';
+  for(const b of blocks){
+    const hpct = Math.max(2, (b.err/maxErr)*132);
+    const sel = state.selection===`block-${b.idx}` ? 'sel':'';
+    h+=`<div class="lbar ${b.status} ${sel}" style="height:${hpct}px"
+        onclick="selectNode('block-${b.idx}')"
+        onmousemove="showBarTip(event,${b.idx})" onmouseleave="hideBarTip()"></div>`;
+  }
+  // first-degraded marker over block 11
+  const leftPct = (11+0.5)/NUM_BLOCKS*100;
+  h+=`<div class="first-deg-marker" style="left:${leftPct}%">首个劣化层</div>`;
+  box.innerHTML=h;
+}
+
+function showBarTip(e,idx){
+  const b=blocks[idx];
+  const tip=document.getElementById('barTip');
+  const statTxt = b.status==='pass'?'达标':b.status==='fail'?'失败 · 根因':'劣化 · 上游传播';
+  tip.innerHTML=`<div><span class="tk">block</span> ${idx}</div>
+    <div><span class="tk">cos</span> ${b.cos.toFixed(4)}</div>
+    <div><span class="tk">状态</span> ${statTxt}</div>`;
+  tip.style.opacity='1';
+  tip.style.left=(e.clientX+14)+'px';
+  tip.style.top=(e.clientY-10)+'px';
+}
+function hideBarTip(){ document.getElementById('barTip').style.opacity='0'; }
+
+/* ---------- Block 11 (operator dataflow) ---------- */
+function viewBlock11(){
+  const b=blocks[11];
+  let flow='';
+  block11Ops.forEach((op,i)=>{
+    const cosCls = op.status==='pass'?'cos-pass':op.status==='fail'?'cos-fail':'cos-warn';
+    const cosTxt = op.maxRel===Infinity? '0.42' : op.cos.toFixed(op.status==='pass'?5:3);
+    const sel = state.selection===op.id?'sel':'';
+    const rootCls = op.root?'root':'';
+    const bpSet = state.breakpoints.has(op.id)?'set':'';
+    flow+=`<div class="op-row">
+      <div class="op-card ${sel} ${rootCls}" onclick="selectNode('${op.id}')">
+        <div class="op-bp ${bpSet}" onclick="event.stopPropagation();toggleBp('${op.id}')" title="设置/取消断点"></div>
+        <div class="op-info">
+          <div class="op-name">${op.name}</div>
+          <div class="op-type">${op.type}</div>
+        </div>
+        <div class="op-stat">
+          <div class="op-cos ${cosCls}">${op.maxRel===Infinity?'inf':''} ${cosTxt}<small>COS</small></div>
+          <span class="badge ${op.status}">${op.status==='pass'?'达标':op.status==='fail'?'失败':'劣化'}</span>
+        </div>
+        ${op.root?`<span class="root-flag">← 首个 fail · 输入正常/输出异常</span>`:''}
+      </div>
+    </div>`;
+    if(i<block11Ops.length-1){
+      const badConn = i>=6 ? 'bad':'';
+      flow+=`<div class="flow-connector ${badConn}"></div>`;
+    }
+  });
+
+  return `
+  <div class="block-summary">
+    <div class="bs-card"><div class="bk">block 余弦相似度</div><div class="bv cos-fail">${b.cos.toFixed(3)}</div></div>
+    <div class="bs-card"><div class="bk">算子总数</div><div class="bv">${block11Ops.length}</div></div>
+    <div class="bs-card"><div class="bk">首个失败算子</div><div class="bv cos-fail">softmax</div></div>
+    <div class="bs-card"><div class="bk">前序算子</div><div class="bv cos-pass">6 / 达标</div></div>
+  </div>
+
+  <p class="section-label">算子数据流 · 按执行顺序</p>
+  <p style="color:var(--text-2);font-size:11.5px;margin:-4px 0 14px">
+    前 6 个算子全部达标,误差从 <b style="color:var(--fail)">attention.softmax</b> 开始翻转 —
+    这是"输入正常 / 输出异常"的边界。点击算子进入断点台复算,或点左侧 ● 设断点。
+  </p>
+  <div class="flow">${flow}</div>`;
+}
+
+/* ---------- Generic block (pass / propagated) ---------- */
+function viewGenericBlock(name,type,status,cos,maxRel){
+  const ok = status==='pass';
+  const icon = ok?'✓':'≈';
+  const title = ok?'本层比对达标':'本层劣化 · 上游传播';
+  const desc = ok
+    ? '该层全部算子误差在阈值内,与 fp32 基准方向一致。沿数据流向上游/下游继续排查,根因不在此层。'
+    : '该层误差由上游 block.11 的 softmax 溢出经残差累积传播而来,本层算子实现无误。根因请回溯至 block.11。';
+  return `
+  <div class="generic-block">
+    <div class="gi" style="color:var(--${ok?'pass':'warn'})">${icon}</div>
+    <h3 class="mono">${name}</h3>
+    <p>${desc}</p>
+    <div class="gmetrics">
+      <div class="gm"><div class="k">类型</div><div class="v">${type.split(' ')[0]}</div></div>
+      <div class="gm"><div class="k">余弦相似度</div><div class="v ${ok?'cos-pass':'cos-warn'}">${typeof cos==='number'?cos.toFixed(4):cos}</div></div>
+      <div class="gm"><div class="k">最大相对误差</div><div class="v ${ok?'cos-pass':'cos-warn'}">${maxRel}</div></div>
+      <div class="gm"><div class="k">判定</div><div class="v ${ok?'cos-pass':'cos-warn'}">${ok?'达标':'传播'}</div></div>
+    </div>
+    ${!ok?`<div style="margin-top:16px"><span class="bp-btn ghost" onclick="selectNode('block-11')">↑ 回溯至 block.11 根因</span></div>`:''}
+  </div>`;
+}
+function viewGenericBlockFor(b){ /* hook for future per-block detail */ }
+
+/* ---------- Operator inspector / breakpoint ---------- */
+function viewOperator(opId){
+  const op = block11Ops.find(o=>o.id===opId);
+  const d = opDetail[opId];
+  const isRoot = op.root;
+  const hasDetail = !!d;
+
+  // header
+  let h = `
+  <div class="op-header ${isRoot?'root':''}">
+    <div class="oh-icon ${op.status==='pass'?'ok':''}">${op.type.includes('Softmax')?'σ':op.type.includes('MatMul')||op.type.includes('matmul')?'∑':op.name.charAt(0).toUpperCase()}</div>
+    <div>
+      <h2>${op.name}</h2>
+      <div class="oh-sub">${op.type} · block.11 · cos ${op.maxRel===Infinity?'0.42':op.cos.toFixed(4)}</div>
+    </div>
+    <div class="oh-right">
+      <span class="badge ${op.status}">${op.status==='pass'?'达标':op.status==='fail'?'失败':'劣化'}</span>
+      ${isRoot?`<span class="badge fail">含 INF</span>`:''}
+    </div>
+  </div>`;
+
+  if(!hasDetail){
+    // operators without full replay data (downstream) — show basic info + propagation note
+    h += `<div class="card" style="text-align:center;padding:30px">
+      <div style="font-size:28px;color:var(--${op.status==='warn'?'warn':'fail'});margin-bottom:8px">≈</div>
+      <h3 class="mono" style="margin-bottom:6px">下游算子 · 误差传播</h3>
+      <p style="color:var(--text-2);font-size:12px;max-width:420px;margin:0 auto 14px">
+        本算子消费了上游 softmax 的异常输出,其偏差来自输入而非自身实现。
+        断点复算会显示:喂入正确输入时本算子输出正常。根因仍是 <b style="color:var(--fail)">attention.softmax</b>。
+      </p>
+      <span class="bp-btn ghost" onclick="selectNode('op-softmax')">→ 跳转根因算子 softmax</span>
+    </div>`;
+    return h;
+  }
+
+  // tensor I/O
+  h += `<div class="tensor-grid">
+    <div class="tio">
+      <h4><span class="d" style="background:var(--text-3)"></span>输入张量</h4>
+      <div class="tio-row"><span class="tk">shape</span><span class="tv">${d.inShape}</span></div>
+      <div class="tio-row"><span class="tk">dtype</span><span class="tv">${d.inDtype}</span></div>
+      <div class="tio-row"><span class="tk">format</span><span class="tv">${d.inFormat}</span></div>
+      <div class="tio-row"><span class="tk">max</span><span class="tv ${isRoot?'warn':''}">${d.inStats.max}${isRoot?'  ⚠ > ln(65504)':''}</span></div>
+      <div class="tio-row"><span class="tk">min / mean</span><span class="tv">${d.inStats.min} / ${d.inStats.mean}</span></div>
+    </div>
+    <div class="tio">
+      <h4><span class="d" style="background:var(--${op.status==='pass'?'pass':'fail'})"></span>输出张量</h4>
+      <div class="tio-row"><span class="tk">shape</span><span class="tv">${d.outShape}</span></div>
+      <div class="tio-row"><span class="tk">dtype</span><span class="tv">${d.outDtype}</span></div>
+      <div class="tio-row"><span class="tk">format</span><span class="tv">${d.inFormat}</span></div>
+      <div class="tio-row"><span class="tk">溢出</span><span class="tv ${isRoot?'bad':''}">${isRoot?'1 inf · 1 nan 行':'无'}</span></div>
+      <div class="tio-row"><span class="tk">采集层级</span><span class="tv">L2 · 全张量</span></div>
+    </div>
+  </div>`;
+
+  // breakpoint console
+  const bpSet = state.breakpoints.has(opId);
+  h += `<div class="bp-console">
+    <div class="bpc-head">
+      <span style="color:var(--fail);font-size:13px">●</span>
+      <span class="t">断点台 · 单算子离线复算</span>
+      <span class="badge ${bpSet?'fail':'warn'}" id="bpState">${bpSet?'断点已设置':'未设断点'}</span>
+    </div>
+    <div class="bp-actions">
+      <button class="bp-btn ${bpSet?'ghost':'primary'}" onclick="toggleBp('${opId}');renderCenter()">
+        <span class="ic">●</span>${bpSet?'取消断点':'设置断点'}
+      </button>
+      <button class="bp-btn primary" id="replayBtn" onclick="runReplay('${opId}')" ${bpSet?'':'disabled'}>
+        <span class="ic">▷</span>离线复算 (replay)
+      </button>
+      <button class="bp-btn ghost" id="upstreamBtn" onclick="runUpstream()" ${state.replayDone?'':'disabled'}>
+        <span class="ic">↑</span>单步上溯
+      </button>
+      <button class="bp-btn ghost" id="reportBtn" onclick="genReport()" ${state.upstreamDone?'':'disabled'}>
+        <span class="ic">⚑</span>生成根因报告
+      </button>
+    </div>
+
+    <div class="replay-result ${state.replayDone?'show':''}" id="replayResult">
+      ${state.replayDone?renderReplay(d):''}
+    </div>
+    <div class="upstream-check ${state.upstreamDone?'show':''}" id="upstreamCheck">
+      ${state.upstreamDone?renderUpstream():''}
+    </div>
+  </div>
+
+  <div class="report ${state.reportDone?'show':''}" id="reportBox">
+    ${state.reportDone?renderReport():''}
+  </div>`;
+
+  return h;
+}
+
+function renderReplay(d){
+  const r = d.replay;
+  const cell=(v,cls)=>`<div class="rv-cell" style="background:${cls==='inf'?'var(--fail)':cls==='hi'?'var(--warn)':'var(--surface-3)'};${cls==='dim'?'color:var(--text-2)':''}">${v}</div>`;
+  return `
+  <div class="compare-cols">
+    <div class="cmp-col npu">
+      <div class="cc-head">⊗ ${r.npu.label}<span class="tag">${r.npu.tag}</span></div>
+      ${r.npu.rows.map(row=>`<div class="cc-row"><span class="ck">${row[0]}</span><span class="cv ${row[2]||''}">${row[1]}</span></div>`).join('')}
+      <div class="row-viz">
+        <div class="rv-label">softmax 行 (head 17 · q 893)</div>
+        <div class="rv-cells">
+          ${cell('0','dim')}${cell('0','dim')}${cell('inf','inf')}${cell('0','dim')}${cell('0','dim')}${cell('0','dim')}
+        </div>
+      </div>
+    </div>
+    <div class="cmp-col ref">
+      <div class="cc-head">✓ ${r.ref.label}<span class="tag">${r.ref.tag}</span></div>
+      ${r.ref.rows.map(row=>`<div class="cc-row"><span class="ck">${row[0]}</span><span class="cv ${row[2]||''}">${row[1]}</span></div>`).join('')}
+      <div class="row-viz">
+        <div class="rv-label">softmax 行 (head 17 · q 893)</div>
+        <div class="rv-cells">
+          ${cell('.03','dim')}${cell('.06','dim')}${cell('.97','hi')}${cell('.02','dim')}${cell('.01','dim')}${cell('.01','dim')}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="verdict-box">
+    <div class="vb-icon">⊗</div>
+    <div>
+      <h4>判定:实现误差 · 算子自身 bug</h4>
+      <p>同一捕获输入(max=<b>14.72</b>)下,NPU 融合 softmax 输出 <b>inf</b>,fp32 基准输出正常(行和=1.0)。
+      排除输入误差 —— 缺陷在 <b>SoftmaxV2 融合 kernel</b> 自身:未做 max-subtraction,exp(14.72)=2.47e6 越过 fp16 上限 65504。</p>
+    </div>
+  </div>`;
+}
+
+function renderUpstream(){
+  const d = opDetail['op-bmmqk'];
+  return `
+  <div class="upstream-card">
+    <div class="uc-icon">∑</div>
+    <div class="uc-body">
+      <div class="uc-name">attention.bmm_qk <span style="color:var(--text-3)">(上游 · BatchMatMul)</span></div>
+      <div class="uc-desc">复算上一算子:NPU 输出与 fp32 基准方向一致,无 inf/nan → softmax 的输入是正常的</div>
+    </div>
+    <div class="uc-metric">${d.replay.cos}<small>COS · 输入达标</small></div>
+  </div>
+  <p style="font-size:11.5px;color:var(--text-2);margin-top:11px;padding-left:2px">
+    ✓ "输入正常 + 输出异常" 双向确认 —— 根因锁定在 <b style="color:var(--fail)">attention.softmax</b> 自身,无需继续上溯。可生成根因报告。
+  </p>`;
+}
+
+function renderReport(){
+  return `
+  <div class="report-head">
+    <span class="rh-badge">根因定位报告</span>
+    <h2>fp16 融合 Softmax 数值溢出</h2>
+  </div>
+
+  <div class="rep-section">
+    <div class="rs-label">根因定位</div>
+    <div class="rep-kv">
+      <div class="kv"><span class="kk">根因算子</span><span class="kv-val">GPTModel.layers.<b>11</b>.attention.<b>softmax</b> · SoftmaxV2(融合)</span></div>
+      <div class="kv"><span class="kk">失效模式</span><span class="kv-val">fp16 数值溢出 · 融合 kernel 未做 safe-softmax(减 rowmax)</span></div>
+      <div class="kv"><span class="kk">数值链条</span><span class="kv-val">输入 max=<b>14.72</b> → exp(14.72)=<b>2.47e6</b> > fp16 上限 <b>65504</b> → <b>inf</b></span></div>
+      <div class="kv"><span class="kk">定位元素</span><span class="kv-val">head=<span class="em">17</span> · query=<span class="em">893</span> · key=<span class="em">41</span></span></div>
+      <div class="kv"><span class="kk">判定依据</span><span class="kv-val">同输入复算:NPU 含 inf,fp32 正常 ⇒ 实现误差(非输入误差)</span></div>
+    </div>
+  </div>
+
+  <div class="rep-section">
+    <div class="rs-label">传播链路</div>
+    <div class="prop-chain">
+      <span class="pstep bad">softmax → inf</span><span class="parrow">→</span>
+      <span class="pstep bad">注意力权重退化</span><span class="parrow">→</span>
+      <span class="pstep bad">block.11 cos 0.42</span><span class="parrow">→</span>
+      <span class="pstep warn">残差累积</span><span class="parrow">→</span>
+      <span class="pstep warn">block.12–31 劣化</span><span class="parrow">→</span>
+      <span class="pstep warn">logits cos 0.61</span><span class="parrow">→</span>
+      <span class="pstep bad">loss 与 GPU 分叉</span>
+    </div>
+  </div>
+
+  <div class="rep-section">
+    <div class="rs-label">搜索空间收敛</div>
+    <div class="prop-chain">
+      <span class="pstep">1,216 算子</span><span class="parrow">→ L0 →</span>
+      <span class="pstep">block.11 / 32</span><span class="parrow">→ L1 →</span>
+      <span class="pstep">softmax / 15</span><span class="parrow">→ L2 →</span>
+      <span class="pstep bad">head17·q893·k41 / 33.5M 元素</span>
+    </div>
+  </div>
+
+  <div class="rep-section">
+    <div class="rs-label">修复建议</div>
+    <div class="fix-list">
+      <div class="fix-item"><span class="fnum">1</span><span class="ftext">启用 <b>safe-softmax</b>:kernel 内先减去行最大值,<code>exp(x - rowmax)</code> 保证所有指数项 ≤ 1,从根本上消除溢出。</span></div>
+      <div class="fix-item"><span class="fnum">2</span><span class="ftext">softmax 归约改用 <code>fp32</code> 累加(混合精度),分子分母在高精度域计算后再转回 fp16。</span></div>
+      <div class="fix-item"><span class="fnum">3</span><span class="ftext">训练侧对 attention scores 施加 <code>logit-cap</code> / scaling,抑制极端 score 进入 softmax。</span></div>
+      <div class="fix-item"><span class="fnum">4</span><span class="ftext">在 msprobe 对该 kernel 启用 <code>--disable-fusion</code> 复测,验证是否融合 pass 误用了非稳定 softmax 模板。</span></div>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   渲染: 指标检视器 (右)
+   ============================================================ */
+function renderInspector(){
+  const el = document.getElementById('inspector');
+  const s = state.selection;
+
+  // 目标 + 指标
+  let target, metrics=[], stack=null, dotCls='fail';
+  if(s==='overview'){
+    target={name:'GPTModel',type:'整网 · 32 layers'};
+    dotCls='fail';
+    metrics=[
+      ['logits cos',netMetrics.logitsCos.toFixed(3),'bad',netMetrics.logitsCos],
+      ['首个劣化层','block.11','bad',null],
+      ['溢出元素',netMetrics.overflow+'','bad',null],
+      ['误差均衡 EB',netMetrics.eb+'','mid',netMetrics.eb],
+    ];
+  }else if(isOpInBlock11(s)){
+    const op=block11Ops.find(o=>o.id===s);
+    dotCls=op.status;
+    target={name:op.name.split('.').pop(),type:op.type};
+    const thr = op.type.includes('MatMul')||op.type.includes('BatchMatMul')||op.type.includes('Soft')?'宽(累加类)':'严(逐元素)';
+    metrics=[
+      ['余弦相似度',op.maxRel===Infinity?'0.421':op.cos.toFixed(5),op.status==='pass'?'ok':op.status==='fail'?'bad':'mid',op.cos],
+      ['最大相对误差',op.maxRel===Infinity?'∞':op.maxRel.toExponential(1),op.status==='pass'?'ok':'bad',null],
+      ['千分一达标率',op.status==='pass'?'99.97%':op.root?'61.2%':'73%',op.status==='pass'?'ok':'mid',op.status==='pass'?0.9997:0.61],
+      ['阈值档位',thr,'',null],
+    ];
+    stack = opDetail[s]?.stack || null;
+  }else if(s.startsWith('block-') && s!=='block--1' && s!=='block-out'){
+    const idx=parseInt(s.split('-')[1]); const b=blocks[idx];
+    dotCls=b.status;
+    target={name:`block.${idx}`,type:'GPTBlock'};
+    metrics=[
+      ['余弦相似度',b.cos.toFixed(4),b.status==='pass'?'ok':'mid',b.cos],
+      ['最大相对误差',b.status==='pass'?'~3e-4':'0.7+',b.status==='pass'?'ok':'bad',null],
+      ['判定',b.status==='pass'?'达标':'劣化(传播)',b.status==='pass'?'ok':'mid',null],
+    ];
+  }else if(s==='block--1'){
+    dotCls='pass'; target={name:'word_embeddings',type:'VocabEmbedding'};
+    metrics=[['余弦相似度','1.0000','ok',1],['最大相对误差','8e-6','ok',null],['判定','达标','ok',null]];
+  }else if(s==='block-out'){
+    dotCls='warn'; target={name:'output',type:'final_norm + lm_head'};
+    metrics=[['余弦相似度','0.611','mid',0.611],['最大相对误差','0.64','bad',null],['判定','劣化(传播)','mid',null]];
+  }
+
+  let h = `<div class="insp-block">
+    <h3>选中节点</h3>
+    <div class="insp-target">
+      <span class="it-dot ${dotCls}" style="background:var(--${dotCls==='ok'?'pass':dotCls})"></span>
+      <div style="overflow:hidden">
+        <div class="it-name">${target.name}</div>
+        <div class="it-type">${target.type}</div>
+      </div>
+    </div>
+  </div>`;
+
+  // metrics
+  h += `<div class="insp-block"><h3>精度指标</h3><div class="insp-metrics">`;
+  for(const m of metrics){
+    const [k,v,cls,barVal]=m;
+    h+=`<div><div class="im-row"><span class="imk">${k}</span><span class="imv ${cls==='bad'?'cos-fail':cls==='ok'?'cos-pass':cls==='mid'?'cos-warn':''}">${v}</span></div>`;
+    if(barVal!==null){
+      const pct=Math.max(3,Math.min(100,barVal*100));
+      const barCol = cls==='bad'?'var(--fail)':cls==='ok'?'var(--pass)':'var(--warn)';
+      h+=`<div class="im-bar"><i style="width:${pct}%;background:${barCol}"></i></div>`;
+    }
+    h+=`</div>`;
+  }
+  h+=`</div></div>`;
+
+  // convergence track
+  h += `<div class="insp-block conv-track"><h3 style="margin-bottom:13px">搜索空间收敛</h3>${renderConvTrack()}</div>`;
+
+  // call stack
+  if(stack){
+    h += `<div class="insp-block"><h3>调用栈</h3><div class="callstack">`;
+    stack.forEach((f,i)=>{
+      h+=`<div class="cs-line">${i===0?'▸':' '} <span class="fn">${f.fn}</span> <span class="loc">@ ${f.loc}</span></div>`;
+    });
+    h+=`</div></div>`;
+  }
+
+  el.innerHTML=h;
+}
+
+function renderConvTrack(){
+  const lvl = state.convLevel;
+  const steps=[
+    {l:'L0',n:'整网',c:'1,216 算子'},
+    {l:'L0→L1',n:'block.11',c:'1 / 32 层'},
+    {l:'L1→L2',n:'softmax',c:'1 / 15 算子'},
+    {l:'L2',n:'根因元素',c:state.reportDone?'head17·q893·k41':'33.5M 元素'},
+  ];
+  let h='';
+  steps.forEach((s,i)=>{
+    let cls='pending';
+    if(i<lvl) cls='done';
+    else if(i===lvl) cls='cur';
+    h+=`<div class="conv-step ${cls}">
+      <span class="cs-node"></span>
+      <div class="cs-body">
+        <div class="cs-lvl">${s.l}</div>
+        <div class="cs-name">${s.n}</div>
+      </div>
+      <div class="cs-count">${s.c}</div>
+    </div>`;
+  });
+  return h;
+}
+
+/* ============================================================
+   交互
+   ============================================================ */
+function selectNode(id){
+  const prev = state.selection;
+  state.selection = id;
+
+  // 更新搜索空间层级 + KPI
+  if(id==='overview'){ setConv(0); }
+  else if(id==='block-11'){ setConv(1); if(prev==='overview') log('drill',`下钻 → <span class="hl">block.11</span> · 首个劣化层 (cos 0.42)`); }
+  else if(id.startsWith('block-')){ setConv(id==='block--1'||id==='block-out'?0:1);
+    if(prev!==id){ const nm=id==='block--1'?'word_embeddings':id==='block-out'?'output':'block.'+id.split('-')[1];
+      log('drill',`查看 ${nm}`); } }
+  else if(isOpInBlock11(id)){ setConv(2);
+    const op=block11Ops.find(o=>o.id===id);
+    if(prev!==id) log('drill',`下钻 → <span class="hl">${op.name}</span>`);
+  }
+
+  renderTree(); renderBreadcrumb(); renderCenter(); renderInspector();
+
+  // 滚动中央到顶
+  const c=document.querySelector('.center'); if(c) c.scrollTop=0;
+}
+
+function setConv(lvl){
+  state.convLevel = lvl;
+  const valEl=document.getElementById('kpiVal');
+  const trailEl=document.getElementById('kpiTrail');
+  const map=[
+    {v:'1,216',u:' 算子',t:'整网'},
+    {v:'15',u:' 算子',t:'1,216 → block.11'},
+    {v:'1',u:' 算子',t:'→ softmax'},
+    {v:'1',u:' 元素',t:'→ head17·q893·k41'},
+  ];
+  const m=map[lvl];
+  valEl.innerHTML=`${m.v}<small>${m.u}</small>`;
+  trailEl.textContent=m.t;
+  // pulse color
+  valEl.style.color = lvl>=2 ? 'var(--fail)' : 'var(--accent)';
+}
+
+function toggleBp(opId){
+  if(state.breakpoints.has(opId)){
+    state.breakpoints.delete(opId);
+    log('bp',`移除断点 · ${opId.replace('op-','')}`);
+  }else{
+    state.breakpoints.add(opId);
+    log('bp',`设置断点 · <span class="hl">${opId.replace('op-','')}</span> · 捕获输入/format/调用栈`);
+  }
+  // re-render whichever view shows bp state
+  if(state.selection==='block-11' || isOpInBlock11(state.selection)){ renderCenter(); }
+  renderTree();
+}
+
+function runReplay(opId){
+  if(!state.breakpoints.has(opId)) return;
+  state.replayDone = true;
+  log('replay',`离线复算 · NPU vs fp32 · <span class="hl">检出 inf</span> (exp 14.72 → 2.47e6 > 65504)`);
+  renderCenter();
+  // scroll to result
+  setTimeout(()=>{document.getElementById('replayResult')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80);
+}
+
+function runUpstream(){
+  if(!state.replayDone) return;
+  state.upstreamDone = true;
+  log('ok',`单步上溯 → bmm_qk · 输入 cos <span class="hl">0.9998</span> · 输入达标`);
+  renderCenter();
+  setTimeout(()=>{document.getElementById('upstreamCheck')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80);
+}
+
+function genReport(){
+  if(!state.upstreamDone) return;
+  state.reportDone = true;
+  setConv(3);
+  renderInspector();
+  log('root',`根因锁定 · block.11.attention.softmax · fp16 softmax 溢出 · 缺 max-subtraction`);
+  renderCenter();
+  setTimeout(()=>{document.getElementById('reportBox')?.scrollIntoView({behavior:'smooth',block:'start'});},80);
+}
+
+/* ============================================================
+   调查日志
+   ============================================================ */
+function log(type,msg){
+  state.logSeq++;
+  state.logT += Math.floor(Math.random()*3)+2;
+  const t = `00:${String(state.logT).padStart(2,'0')}`;
+  const el = document.getElementById('consoleLog');
+  const line = document.createElement('div');
+  line.className = `log-line ev-${type}`;
+  line.innerHTML = `<span class="lt">[${t}]</span><span class="ll">${msg}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('logCount').textContent = state.logSeq+' 步';
+}
+
+/* ============================================================
+   Reset
+   ============================================================ */
+function resetAll(){
+  state = {selection:'overview',breakpoints:new Set(),replayDone:false,upstreamDone:false,
+    reportDone:false,convLevel:0,logSeq:0,logT:0};
+  document.getElementById('consoleLog').innerHTML='';
+  setConv(0);
+  renderTree(); renderBreadcrumb(); renderCenter(); renderInspector();
+  log('drill',`加载整网比对结果 · <span class="hl">检出精度异常</span> (logits cos 0.61 · 1 处 fp16 溢出)`);
+}
+
+/* ============================================================
+   Init
+   ============================================================ */
+renderTree();
+renderBreadcrumb();
+renderCenter();
+renderInspector();
+setConv(0);
+log('drill',`加载整网比对结果 · <span class="hl">检出精度异常</span> (logits cos 0.61 · 1 处 fp16 溢出)`);
+</script>
+</body>
+</html>
