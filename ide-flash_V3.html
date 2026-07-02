@@ -1,0 +1,1150 @@
+
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>昇腾迁移助手 · FlashAttention</title>
+<style>
+:root{
+  --src:#3fb4c4; --src-dim:#1e5a63; --src-bg:rgba(63,180,196,.09);
+  --tgt:#d9843f; --tgt-dim:#6b4322; --tgt-bg:rgba(217,132,63,.10);
+  --amber:#e8b44a;
+  --ok:#4fb477; --warn:#e8b44a; --err:#e0604f; --info:#5a8fb8;
+  --bg0:#14171c; --bg1:#191d24; --bg2:#1f242c; --bg3:#272d37;
+  --line:#2c333d; --line2:#363e4a;
+  --ink:#dfe4ea; --ink2:#9aa4b0; --ink3:#5f6a76;
+  --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+button:focus-visible{outline:2px solid var(--src);outline-offset:1px}
+
+/* ---- shell ---- */
+.app{display:grid;grid-template-rows:34px 1fr 22px;height:100vh}
+.titlebar{background:var(--bg1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 12px;font-size:12px}
+.tb-dots{display:flex;gap:7px}
+.tb-dots i{width:11px;height:11px;border-radius:50%;display:block}
+.tb-dots i:nth-child(1){background:#e0604f}.tb-dots i:nth-child(2){background:#e8b44a}.tb-dots i:nth-child(3){background:#4fb477}
+.tb-title{color:var(--ink2);font-weight:500;letter-spacing:.2px}
+.tb-title b{color:var(--ink);font-weight:600}
+.tb-spacer{flex:1}
+.tb-btn{padding:4px 11px;border-radius:5px;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:6px;border:1px solid var(--line2);color:var(--ink2)}
+.tb-btn:hover{background:var(--bg2);color:var(--ink)}
+.tb-btn.run{background:linear-gradient(180deg,#e8944a,#d9843f);color:#1a1206;border-color:transparent}
+.tb-btn.run:hover{filter:brightness(1.08)}
+.tb-btn.new{border-color:var(--src-dim);color:var(--src)}
+
+.main{display:grid;grid-template-columns:46px 210px 1fr 372px;min-height:0}
+
+/* activity bar */
+.activity{background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:4px}
+.act-i{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink3);position:relative}
+.act-i svg{width:20px;height:20px}
+.act-i:hover{color:var(--ink)}
+.act-i.on{color:var(--ink)}
+.act-i.on::before{content:'';position:absolute;left:-8px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--src)}
+.act-badge{position:absolute;top:4px;right:3px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--err);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.act-sp{flex:1}
+
+/* explorer */
+.explorer{background:var(--bg1);border-right:1px solid var(--line);overflow-y:auto;font-size:12px}
+.exp-head{padding:9px 12px 6px;color:var(--ink3);font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase}
+.exp-sec{margin-bottom:2px}
+.exp-folder{padding:4px 10px;display:flex;align-items:center;gap:6px;color:var(--ink2);font-weight:600;font-size:11.5px}
+.exp-folder svg{width:13px;height:13px;opacity:.8}
+.exp-file{padding:4px 10px 4px 26px;display:flex;align-items:center;gap:7px;color:var(--ink2);cursor:pointer;border-left:2px solid transparent;position:relative}
+.exp-file:hover{background:var(--bg2)}
+.exp-file.on{background:var(--bg2);color:var(--ink);border-left-color:var(--src)}
+.exp-file.tgt.on{border-left-color:var(--tgt)}
+.exp-file svg{width:14px;height:14px;flex-shrink:0}
+.dot-src{color:var(--src)}.dot-tgt{color:var(--tgt)}
+.exp-file .tag{margin-left:auto;font-size:9px;padding:1px 5px;border-radius:4px;font-weight:700;letter-spacing:.3px}
+.tag.new{background:var(--tgt-bg);color:var(--tgt)}
+.exp-pipe{padding:10px 12px}
+.pipe-t{color:var(--ink3);font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;margin-bottom:9px}
+.pstep{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:11.5px;color:var(--ink3)}
+.pstep .pd{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.pstep.done{color:var(--ink2)}
+.pstep.done .pd{background:var(--ok);border-color:var(--ok);color:#0d1510}
+.pstep.active{color:var(--tgt)}
+.pstep.active .pd{border-color:var(--tgt);color:var(--tgt);box-shadow:0 0 0 3px var(--tgt-bg)}
+
+/* ===== EDITOR AREA: split into two file windows ===== */
+.editor-wrap{display:grid;grid-template-columns:1fr 1fr;min-width:0;background:var(--bg0)}
+.fpane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.fpane.src{border-right:1px solid var(--line)}
+.fpane-head{height:34px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--bg1);border-bottom:1px solid var(--line);font-size:11.5px}
+.fpane-head .fname{font-weight:600;display:flex;align-items:center;gap:7px}
+.fpane-head svg{width:14px;height:14px}
+.fpane-head .fmeta{margin-left:auto;color:var(--ink3);font-size:10.5px}
+.fpane.src .fpane-head{border-bottom-color:var(--src-dim)}
+.fpane.tgt .fpane-head{border-bottom-color:var(--tgt-dim)}
+
+/* code region */
+.code{flex:1;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.62;padding:8px 0 40px;min-height:0}
+.tgt .code{flex:0 0 auto;max-height:none}
+.ln{display:flex;padding:0 14px 0 0;white-space:pre;min-height:19.5px}
+.ln .num{width:38px;flex-shrink:0;text-align:right;padding-right:14px;color:var(--ink3);user-select:none;font-size:11px}
+.ln .txt{flex:1}
+.ln.diag-err{background:rgba(224,96,79,.06)}
+.ln.diag-err .num{color:var(--err);font-weight:700}
+.ln.diag-warn{background:rgba(232,180,74,.05)}
+.ln.wave-err .txt{text-decoration:underline wavy var(--err);text-underline-offset:3px;text-decoration-thickness:1px}
+.ln.wave-warn .txt{text-decoration:underline wavy var(--warn);text-underline-offset:3px;text-decoration-thickness:1px}
+/* target code injection */
+.ln.inject{background:rgba(217,132,63,.11);animation:flashIn 1.4s ease}
+@keyframes flashIn{0%{background:rgba(217,132,63,.42)}100%{background:rgba(217,132,63,.11)}}
+.block-tag{padding:2px 14px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--tgt);background:var(--tgt-bg);border-top:1px solid var(--tgt-dim);border-bottom:1px solid var(--tgt-dim);display:flex;align-items:center;gap:7px}
+.block-tag.pending{color:var(--ink3);background:transparent;border-color:var(--line);border-style:dashed}
+.block-tag .bt-dot{width:6px;height:6px;border-radius:50%;background:var(--tgt)}
+.block-tag.pending .bt-dot{background:var(--ink3)}
+/* placeholder in empty target */
+.tgt-empty{padding:30px 22px;color:var(--ink3);font-size:12px;line-height:1.8}
+.tgt-empty .te-title{color:var(--ink2);font-weight:600;margin-bottom:6px;font-family:var(--sans)}
+.tgt-empty code{color:var(--tgt);background:var(--tgt-bg);padding:1px 5px;border-radius:3px;font-size:11px}
+
+/* syntax */
+.k{color:#c98fd8}.f{color:#6fb8e0}.s{color:#8fc98a}.n{color:#e0a878}.c{color:#5f6a76;font-style:italic}.d{color:#e0b04a}.t{color:#5ec8d0}.o{color:#a8b2bd}
+
+/* ===== DIFFERENTIAL ANALYSIS document (overlays source pane) ===== */
+.src{position:relative}
+.diff-doc{position:absolute;inset:34px 0 0 0;background:var(--bg0);z-index:20;overflow-y:auto;display:none;animation:docIn .35s ease}
+.diff-doc.on{display:block}
+@keyframes docIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.dd-hero{padding:16px 18px 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(63,180,196,.05),transparent)}
+.dd-eyebrow{font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--ink3);margin-bottom:7px}
+.dd-title{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px}
+.dd-title .arr{color:var(--ink3);margin:0 8px;font-weight:400}
+.dd-title .g{color:var(--src)}.dd-title .n{color:var(--tgt)}
+.dd-sub{font-size:11.5px;color:var(--ink2);line-height:1.6}
+.dd-scores{display:flex;gap:8px;margin-top:12px}
+.dd-score{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.dd-score .dv{font-family:var(--mono);font-size:18px;font-weight:700;line-height:1}
+.dd-score .dl{font-size:9.5px;color:var(--ink3);margin-top:5px;letter-spacing:.3px}
+.dd-score.ok .dv{color:var(--ok)}.dd-score.warn .dv{color:var(--warn)}.dd-score.err .dv{color:var(--err)}
+
+.dd-sec{padding:15px 18px;border-bottom:1px solid var(--line)}
+.dd-sec-h{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.dd-sec-n{width:20px;height:20px;border-radius:6px;background:var(--tgt-bg);color:var(--tgt);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dd-sec-t{font-size:12.5px;font-weight:700}
+.dd-sec-d{font-size:10.5px;color:var(--ink3);margin-left:auto}
+
+/* execution model split */
+.exec-split{display:grid;grid-template-columns:1fr 22px 1fr;gap:0;align-items:stretch}
+.exec-col{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.exec-col.gpu{border-color:var(--src-dim)}
+.exec-col.npu{border-color:var(--tgt-dim)}
+.exec-ch{padding:7px 11px;font-size:10.5px;font-weight:700;letter-spacing:.4px;display:flex;align-items:center;gap:7px}
+.exec-col.gpu .exec-ch{background:var(--src-bg);color:var(--src)}
+.exec-col.npu .exec-ch{background:var(--tgt-bg);color:var(--tgt)}
+.exec-ch .badge{margin-left:auto;font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.06)}
+.exec-row{padding:7px 11px;font-size:10.5px;line-height:1.5;border-top:1px solid var(--line);display:flex;gap:8px}
+.exec-row .ek{color:var(--ink3);flex-shrink:0;width:52px}
+.exec-row .ev{color:var(--ink2)}
+.exec-row .ev b{color:var(--ink)}
+.exec-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink3)}
+.exec-mid svg{width:16px;height:16px}
+.exec-verdict{grid-column:1/-1;margin-top:10px;font-size:10.5px;color:var(--ink2);background:var(--bg2);border-left:2px solid var(--tgt);border-radius:0 6px 6px 0;padding:8px 11px;line-height:1.6}
+.exec-verdict b{color:var(--tgt)}
+
+/* primitive verdict table */
+.ptab{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.ptab-head,.ptab-row{display:grid;grid-template-columns:1.15fr 1.15fr 66px 1fr;gap:0;align-items:center}
+.ptab-head{background:var(--bg2);font-size:9.5px;font-weight:700;color:var(--ink3);letter-spacing:.4px;text-transform:uppercase}
+.ptab-head>span{padding:7px 10px}
+.ptab-row{border-top:1px solid var(--line);font-size:11px}
+.ptab-row>span{padding:8px 10px;min-width:0}
+.ptab-row:hover{background:var(--bg2)}
+.ptab .pm{font-family:var(--mono);font-size:10.5px}
+.ptab .src-p{color:var(--src)}
+.ptab .tgt-p{color:var(--tgt)}
+.ptab .fate{text-align:center}
+.fchip{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.fchip.native{background:rgba(79,180,119,.14);color:var(--ok)}
+.fchip.tune{background:rgba(232,180,74,.14);color:var(--warn)}
+.fchip.custom{background:rgba(224,96,79,.14);color:var(--err)}
+.ptab .reason{color:var(--ink3);font-size:10px;line-height:1.45}
+
+/* memory hierarchy */
+.mem-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mem-stack{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mem-stack.gpu{border-color:var(--src-dim)}.mem-stack.npu{border-color:var(--tgt-dim)}
+.mem-sh{padding:6px 10px;font-size:10px;font-weight:700}
+.mem-stack.gpu .mem-sh{background:var(--src-bg);color:var(--src)}
+.mem-stack.npu .mem-sh{background:var(--tgt-bg);color:var(--tgt)}
+.mem-lvl{padding:6px 10px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;font-size:10px}
+.mem-lvl .mn{font-family:var(--mono);font-weight:700;color:var(--ink);width:60px;flex-shrink:0}
+.mem-lvl .md{color:var(--ink3);flex:1;line-height:1.35}
+.mem-lvl .mtag{font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px;flex-shrink:0}
+.mtag.imp{background:rgba(79,180,119,.14);color:var(--ok)}
+.mtag.exp{background:rgba(224,96,79,.14);color:var(--err)}
+.mem-note{grid-column:1/-1;font-size:10.5px;color:var(--ink2);margin-top:2px;line-height:1.6}
+.mem-note b{color:var(--tgt)}
+
+/* gap cards */
+.gap-list{display:flex;flex-direction:column;gap:9px}
+.gapc{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.gapc-h{display:flex;align-items:center;gap:9px;padding:9px 11px}
+.gapc-sev{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.gapc-sev svg{width:13px;height:13px}
+.gapc.err .gapc-sev{background:rgba(224,96,79,.14);color:var(--err)}
+.gapc.warn .gapc-sev{background:rgba(232,180,74,.14);color:var(--warn)}
+.gapc-t{font-size:11.5px;font-weight:700}
+.gapc-loc{font-family:var(--mono);font-size:9.5px;color:var(--ink3);margin-top:1px}
+.gapc-who{margin-left:auto;font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:5px}
+.who-self{background:rgba(79,180,119,.14);color:var(--ok)}
+.who-infra{background:rgba(224,96,79,.14);color:var(--err)}
+.gapc-b{padding:0 11px 10px;font-size:10.5px;line-height:1.55;color:var(--ink2)}
+.gapc-b .gg{display:grid;grid-template-columns:auto 1fr;gap:4px 9px;margin-top:6px}
+.gapc-b .gk{color:var(--ink3);font-weight:600}
+.gapc-b .gv{color:var(--ink2)}
+.gapc-b .gv .src-p{color:var(--src);font-family:var(--mono)}
+.gapc-b .gv .tgt-p{color:var(--tgt);font-family:var(--mono)}
+.gapc-cta{margin-top:9px}
+.gapc-cta button{font-size:10px;font-weight:700;padding:5px 11px;border-radius:6px;background:var(--tgt-bg);border:1px solid var(--tgt-dim);color:var(--tgt)}
+.gapc-cta button:hover{background:var(--tgt);color:#1a1206}
+
+.dd-close{position:absolute;top:8px;right:10px;z-index:22;width:26px;height:26px;border-radius:7px;background:var(--bg2);border:1px solid var(--line2);color:var(--ink2);display:flex;align-items:center;justify-content:center}
+.dd-close:hover{color:var(--ink);background:var(--bg3)}
+.dd-close svg{width:15px;height:15px}
+.src-reopen{font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--src-dim);color:var(--src);font-weight:600;margin-left:8px}
+.src-reopen:hover{background:var(--src-bg)}
+
+/* ===== VIZ PANEL under target editor ===== */
+.viz{flex:1;min-height:0;border-top:1px solid var(--tgt-dim);background:var(--bg1);display:flex;flex-direction:column}
+.viz-tabs{height:30px;flex-shrink:0;display:flex;align-items:stretch;border-bottom:1px solid var(--line);padding:0 4px;gap:2px}
+.vtab{padding:0 12px;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--ink3);border-bottom:2px solid transparent}
+.vtab .vdot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.vtab.ready .vdot{background:var(--tgt)}
+.vtab.on{color:var(--ink);border-bottom-color:var(--tgt)}
+.vtab:hover{color:var(--ink2)}
+.viz-body{flex:1;overflow:auto;padding:14px 16px}
+.viz-pane{display:none}
+.viz-pane.on{display:block}
+.viz-empty{color:var(--ink3);font-size:12px;text-align:center;padding:34px 20px;line-height:1.9}
+.viz-empty svg{width:26px;height:26px;opacity:.4;margin-bottom:8px}
+
+/* UB planner viz */
+.ub-top{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.ub-chip-sel{display:flex;gap:4px;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:3px}
+.ub-chip{padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;color:var(--ink2)}
+.ub-chip.on{background:var(--tgt);color:#1a1206}
+.ub-cap{margin-left:auto;font-size:11px;color:var(--ink2)}
+.ub-cap b{color:var(--tgt)}
+.ubar-wrap{margin:14px 0 8px}
+.ubar-labels{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink3);margin-bottom:5px}
+.ubar{height:34px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;position:relative;overflow:hidden}
+.ubar .limit{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--err);z-index:4}
+.ubar .limit::after{content:attr(data-lab);position:absolute;top:-15px;left:6px;font-size:9px;color:var(--err);white-space:nowrap;font-weight:700}
+.useg{height:100%;position:absolute;top:0;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;color:#1a1206;transition:all .6s cubic-bezier(.4,0,.2,1)}
+.useg.qkv{background:#6fb8e0;left:0}
+.useg.sm{background:#e0a878}
+.useg.buf{background:#8fc98a}
+.useg.over{background:repeating-linear-gradient(45deg,#e0604f,#e0604f 5px,#b04a3d 5px,#b04a3d 10px);color:#fff}
+.ub-verdict{padding:9px 12px;border-radius:7px;font-size:11.5px;line-height:1.6;margin-top:10px;display:flex;gap:9px;align-items:flex-start}
+.ub-verdict svg{width:15px;height:15px;flex-shrink:0;margin-top:1px}
+.ub-verdict.bad{background:rgba(224,96,79,.1);border:1px solid rgba(224,96,79,.3);color:#e89b90}
+.ub-verdict.good{background:rgba(79,180,119,.1);border:1px solid rgba(79,180,119,.3);color:#8fd0aa}
+.ub-params{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.ub-param{background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:8px 12px;flex:1;min-width:92px}
+.ub-param .pk{font-size:10px;color:var(--ink3);margin-bottom:3px}
+.ub-param .pv{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--tgt)}
+.ub-param .pv small{font-size:10px;color:var(--ink3);font-weight:400}
+
+/* pipeline viz */
+.pp-row{margin-bottom:14px}
+.pp-lab{display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px}
+.pp-lab .pn{font-weight:600;color:var(--ink2)}
+.pp-lab .util{font-family:var(--mono);font-weight:700}
+.pp-lab .util.lo{color:var(--err)}.pp-lab .util.hi{color:var(--ok)}
+.tl{position:relative;height:22px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.tl .lane-lab{position:absolute;left:5px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--ink3);z-index:3;font-weight:700}
+.blk{position:absolute;top:3px;bottom:3px;border-radius:3px;font-size:8.5px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#12161c}
+.blk.mte{background:#6fb8e0}.blk.cube{background:#e0a878}.blk.idle{background:var(--line2);color:var(--ink3)}
+.pp-tls{display:flex;flex-direction:column;gap:5px}
+.pp-note{font-size:10.5px;color:var(--ink3);margin-top:5px}
+
+/* perf viz */
+.perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.pcard{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:11px}
+.pcard .pkk{font-size:10px;color:var(--ink3);margin-bottom:6px;letter-spacing:.4px;text-transform:uppercase}
+.pmeter{height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:5px}
+.pmeter i{display:block;height:100%;border-radius:4px}
+.pcard .pval{font-family:var(--mono);font-size:13px;font-weight:700}
+.perf-path{margin-top:6px}
+.ppath-t{font-size:11px;color:var(--ink2);font-weight:600;margin-bottom:9px}
+.ppb{height:26px;border-radius:6px;background:var(--bg2);border:1px solid var(--line);position:relative;margin-bottom:7px;overflow:hidden}
+.ppb i{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;padding-left:9px;font-size:10px;font-weight:700;color:#12161c;border-radius:5px}
+.ppb .pl{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--ink2);z-index:2}
+
+/* ===== COPILOT ===== */
+.copilot{background:var(--bg1);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.cop-head{height:38px;flex-shrink:0;display:flex;align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid var(--line)}
+.cop-logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--src),var(--tgt));display:flex;align-items:center;justify-content:center;font-size:12px}
+.cop-head .ct{font-weight:700;font-size:12.5px}
+.cop-head .cs{margin-left:auto;font-size:10px;color:var(--ink3);display:flex;align-items:center;gap:5px}
+.cop-head .cs::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.cop-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+.msg{display:flex;gap:9px}
+.msg .av{width:24px;height:24px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.msg.user .av{background:var(--src-bg);color:var(--src);border:1px solid var(--src-dim)}
+.msg.bot .av{background:linear-gradient(135deg,var(--src),var(--tgt))}
+.msg .bubble{flex:1;min-width:0;font-size:12.5px;line-height:1.62}
+.msg.user .bubble{color:var(--ink)}
+.msg .bubble p{margin-bottom:7px}
+.msg .bubble b{color:#fff;font-weight:600}
+.attach{display:inline-flex;align-items:center;gap:6px;background:var(--src-bg);border:1px solid var(--src-dim);border-radius:6px;padding:3px 9px;font-size:11px;color:var(--src);font-family:var(--mono);margin-bottom:6px}
+.attach svg{width:12px;height:12px}
+
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:3px}
+.card-h{padding:8px 11px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line);letter-spacing:.3px}
+.card-h svg{width:13px;height:13px}
+.card-h.plan{color:var(--tgt)}
+.card-b{padding:10px 11px;font-size:11.5px;line-height:1.6;color:var(--ink2)}
+.card-b .row{display:flex;gap:8px;padding:3px 0;align-items:center}
+.mono-sm{font-family:var(--mono);font-size:11px}
+
+/* command buttons in copilot */
+.cmd-list{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.cmd{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;text-align:left;transition:.15s}
+.cmd:hover:not(:disabled){border-color:var(--tgt);background:var(--tgt-bg)}
+.cmd:disabled{opacity:.5;cursor:default}
+.cmd .ci{width:26px;height:26px;border-radius:7px;background:var(--bg3);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--tgt)}
+.cmd .ci svg{width:15px;height:15px}
+.cmd .cbody{flex:1;min-width:0}
+.cmd .cname{font-weight:700;font-size:12px;color:var(--ink);display:flex;align-items:center;gap:7px}
+.cmd .cdesc{font-size:10.5px;color:var(--ink3);margin-top:2px}
+.cmd .cstat{font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px}
+.cstat.todo{background:var(--bg3);color:var(--ink3)}
+.cstat.done{background:rgba(79,180,119,.15);color:var(--ok)}
+.cmd.done{border-color:var(--ok)}
+.cmd.done .ci{background:rgba(79,180,119,.12);color:var(--ok)}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.chip{padding:5px 10px;border-radius:14px;border:1px solid var(--line2);font-size:11px;color:var(--ink2);font-weight:500}
+.chip:hover{border-color:var(--tgt);color:var(--tgt);background:var(--tgt-bg)}
+
+.cop-input{flex-shrink:0;border-top:1px solid var(--line);padding:10px 12px}
+.cin-tools{display:flex;gap:6px;margin-bottom:8px}
+.cin-tool{font-size:10.5px;padding:3px 9px;border-radius:6px;border:1px solid var(--line2);color:var(--ink2);display:flex;align-items:center;gap:5px}
+.cin-tool:hover{border-color:var(--src);color:var(--src)}
+.cin-tool svg{width:12px;height:12px}
+.cin-box{background:var(--bg2);border:1px solid var(--line2);border-radius:9px;display:flex;align-items:flex-end;padding:8px 8px 8px 12px;gap:8px}
+.cin-box:focus-within{border-color:var(--src)}
+.cin-box textarea{flex:1;background:none;border:none;color:var(--ink);font-family:inherit;font-size:12.5px;resize:none;outline:none;line-height:1.5;max-height:80px}
+.cin-send{width:30px;height:30px;border-radius:7px;background:var(--tgt);color:#1a1206;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cin-send:hover{filter:brightness(1.1)}
+.cin-send svg{width:15px;height:15px}
+
+/* statusbar */
+.statusbar{background:var(--tgt-dim);color:#f0dcc4;display:flex;align-items:center;gap:16px;padding:0 12px;font-size:11px}
+.statusbar .si{display:flex;align-items:center;gap:5px}
+.statusbar svg{width:12px;height:12px}
+.statusbar .sp{flex:1}
+.statusbar .err-c{color:#f0b0a4}.statusbar .warn-c{color:#f0d4a0}
+
+/* toast */
+.toast-wrap{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:var(--bg3);border:1px solid var(--line2);border-radius:9px;padding:10px 16px;font-size:12px;display:flex;align-items:center;gap:9px;box-shadow:0 12px 34px rgba(0,0,0,.5);animation:tin .3s ease}
+.toast svg{width:15px;height:15px}
+.toast.ok{border-color:var(--ok)}.toast.ok svg{color:var(--ok)}
+.toast.err{border-color:var(--err)}.toast.err svg{color:var(--err)}
+.toast.info svg{color:var(--tgt)}
+@keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(8,10,13,.72);backdrop-filter:blur(3px);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-bg.on{display:flex}
+.modal{background:var(--bg1);border:1px solid var(--line2);border-radius:14px;width:440px;max-width:92vw;box-shadow:0 24px 70px rgba(0,0,0,.6);overflow:hidden}
+.modal-h{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.modal-h .mt{font-weight:700;font-size:14px}
+.modal-h .mx{margin-left:auto;color:var(--ink3)}
+.modal-h .mx:hover{color:var(--ink)}
+.modal-b{padding:18px 20px;font-size:12.5px;line-height:1.7;color:var(--ink2)}
+.modal-b b{color:var(--ink)}
+.modal-f{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px}
+.mbtn{padding:8px 16px;border-radius:8px;font-weight:600;font-size:12px}
+.mbtn.pri{background:var(--tgt);color:#1a1206}
+.mbtn.sec{border:1px solid var(--line2);color:var(--ink2)}
+.mbtn.sec:hover{background:var(--bg2)}
+
+@media(max-width:1180px){.main{grid-template-columns:46px 0 1fr 340px}.explorer{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- titlebar -->
+  <div class="titlebar">
+    <div class="tb-dots"><i></i><i></i><i></i></div>
+    <div class="tb-title"><b>昇腾迁移助手</b> — flash_attention · GPU→Atlas A2</div>
+    <div class="tb-spacer"></div>
+    <button class="tb-btn new" onclick="openModal()">＋ 新建迁移</button>
+    <button class="tb-btn run" onclick="cmdCompile()">▶ 毕昇编译 + 验证</button>
+  </div>
+
+  <div class="main">
+    <!-- activity bar -->
+    <div class="activity">
+      <div class="act-i on" title="资源管理器">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      </div>
+      <div class="act-i" title="迁移问题" onclick="switchViz('none');toast('info','诊断已在下方“迁移问题”卡展示')">
+        <span class="act-badge" id="actBadge">3</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 9v4m0 4h.01M10.3 3.3 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg>
+      </div>
+      <div class="act-i" title="算子映射库">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg>
+      </div>
+      <div class="act-i" title="需求模板" onclick="openModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      </div>
+      <div class="act-sp"></div>
+      <div class="act-i" title="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      </div>
+    </div>
+
+    <!-- explorer -->
+    <div class="explorer">
+      <div class="exp-head">迁移工作区</div>
+      <div class="exp-sec">
+        <div class="exp-folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 9l6 6 6-6"/></svg>
+          gpu_src
+        </div>
+        <div class="exp-file src on">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="dot-src"><circle cx="12" cy="12" r="4"/></svg>
+          flash_attn.py
+        </div>
+      </div>
+      <div class="exp-sec">
+        <div class="exp-folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 9l6 6 6-6"/></svg>
+          ascend_out
+        </div>
+        <div class="exp-file tgt on">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="dot-tgt"><circle cx="12" cy="12" r="4"/></svg>
+          flash_attn_ascend.cce
+          <span class="tag new" id="genTag">生成中</span>
+        </div>
+      </div>
+      <div class="exp-pipe">
+        <div class="pipe-t">迁移流水线</div>
+        <div class="pstep done" id="ps0"><span class="pd">✓</span>接入算法</div>
+        <div class="pstep done" id="ps1"><span class="pd">✓</span>语义分析</div>
+        <div class="pstep active" id="ps2"><span class="pd">3</span>Tiling / UB 规划</div>
+        <div class="pstep" id="ps3"><span class="pd">4</span>流水线注入</div>
+        <div class="pstep" id="ps4"><span class="pd">5</span>掩码改写</div>
+        <div class="pstep" id="ps5"><span class="pd">6</span>编译验证</div>
+      </div>
+    </div>
+
+    <!-- ==== EDITOR: split source | target(code+viz) ==== -->
+    <div class="editor-wrap">
+      <!-- SOURCE pane -->
+      <div class="fpane src">
+        <div class="fpane-head">
+          <span class="fname"><svg viewBox="0 0 24 24" fill="currentColor" class="dot-src"><circle cx="12" cy="12" r="4"/></svg>flash_attn.py</span>
+          <span class="fmeta">Triton · GPU 源</span>
+          <button class="src-reopen" onclick="openDiff()">◫ 差异分析</button>
+        </div>
+        <div class="code" id="srcCode"></div>
+
+        <!-- ===== Differential analysis document ===== -->
+        <div class="diff-doc" id="diffDoc">
+          <button class="dd-close" onclick="closeDiff()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          <div class="dd-hero">
+            <div class="dd-eyebrow">GPU → NPU 差异分析 · 自动生成</div>
+            <div class="dd-title"><span class="g">Triton FlashAttention-2</span><span class="arr">→</span><span class="n">Ascend AscendC</span></div>
+            <div class="dd-sub">识别为 <b>openai/triton fused-attention（FA2，online-softmax，因果）</b>：<span class="mono-sm">BLOCK_M=128 / BLOCK_N=64 / num_stages=4</span>，fp16 计算 + fp32 累加，<span class="mono-sm">make_block_ptr</span> 描述分块，<span class="mono-sm">exp2</span>+log2(e) 技巧，回写 LSE 供 backward。SIMT 与 DSA 是两套执行模型——下面逐层拆出必须重写的差异点。</div>
+            <div class="dd-scores">
+              <div class="dd-score ok"><div class="dv">10</div><div class="dl">原语可原生映射</div></div>
+              <div class="dd-score warn"><div class="dv">4</div><div class="dl">需 Tiling/精度/语义调优</div></div>
+              <div class="dd-score err"><div class="dv">2</div><div class="dl">硬件鸿沟需重写</div></div>
+            </div>
+          </div>
+
+          <!-- 1. execution model -->
+          <div class="dd-sec">
+            <div class="dd-sec-h"><span class="dd-sec-n">1</span><span class="dd-sec-t">执行模型：SIMT 隐式并行 vs DSA 显式分工</span><span class="dd-sec-d">最根本的差异</span></div>
+            <div class="exec-split">
+              <div class="exec-col gpu">
+                <div class="exec-ch">GPU · SIMT<span class="badge">隐式</span></div>
+                <div class="exec-row"><span class="ek">并行单元</span><span class="ev"><b>warp / thread</b> 硬件调度，程序员写单线程视角</span></div>
+                <div class="exec-row"><span class="ek">计算</span><span class="ev">CUDA core 统一执行，<b>无算/存分离</b></span></div>
+                <div class="exec-row"><span class="ek">数据搬运</span><span class="ev">访存延迟由 <b>warp 切换</b>隐藏，自动</span></div>
+                <div class="exec-row"><span class="ek">流水</span><span class="ev">SM 内隐式重叠，<b>硬件负责</b></span></div>
+              </div>
+              <div class="exec-mid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+              <div class="exec-col npu">
+                <div class="exec-ch">NPU · DSA (达芬奇)<span class="badge">显式</span></div>
+                <div class="exec-row"><span class="ek">并行单元</span><span class="ev"><b>Cube / Vector / MTE</b> 三类单元，需手动派活</span></div>
+                <div class="exec-row"><span class="ek">计算</span><span class="ev">矩阵走 <b>Cube</b>，逐元素走 <b>Vector</b>，分开编排</span></div>
+                <div class="exec-row"><span class="ek">数据搬运</span><span class="ev"><b>MTE 显式指令</b> 在 UB↔L1↔HBM 间搬，手写</span></div>
+                <div class="exec-row"><span class="ek">流水</span><span class="ev">须<b>手动双缓冲</b>，否则单元空转</span></div>
+              </div>
+              <div class="exec-verdict">GPU 的一段 kernel 在硬件层"自动"完成的并行、隐藏延迟、流水重叠，在昇腾上<b>全部要显式写出来</b>。这就是为什么朴素直译只能跑到 ~15%：算子逻辑对了，但没有把搬运和计算编排成流水。</div>
+            </div>
+          </div>
+
+          <!-- 2. primitive verdict -->
+          <div class="dd-sec">
+            <div class="dd-sec-h"><span class="dd-sec-n">2</span><span class="dd-sec-t">原语逐条裁决</span><span class="dd-sec-d">16 个 Triton 原语 → 昇腾归宿</span></div>
+            <div class="ptab">
+              <div class="ptab-head"><span>Triton 原语</span><span>昇腾对应</span><span class="fate">归宿</span><span>原因</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.dot(q,k)</span><span class="pm tgt-p">Cube · Mmad</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">矩阵乘落 Cube；DIM/BLOCK 须 16 对齐</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.max / tl.maximum</span><span class="pm tgt-p">Vector · ReduceMax</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">沿 axis=1 归约走 Vector</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.sum(nume,1)</span><span class="pm tgt-p">Vector · ReduceSum</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">denom 累加</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.where (causal)</span><span class="pm tgt-p">Vector · Select</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">整块条件选择，非 masked-store，可直映</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.program_id(0/1)</span><span class="pm tgt-p">block_idx</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">FA2 双轴 grid → 核内 block 索引</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.load / tl.store</span><span class="pm tgt-p">MTE · DataCopy</span><span class="fate"><span class="fchip native">原生</span></span><span class="reason">但须显式指定 UB 缓冲与搬运时机</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.math.exp2 + log2(e)</span><span class="pm tgt-p">Vector · Exp</span><span class="fate"><span class="fchip tune">调优</span></span><span class="reason">昇腾 Exp 以 e 为底，去掉 1.44269504 缩放</span></div>
+              <div class="ptab-row"><span class="pm src-p">.to(tl.float16) + fp32 acc</span><span class="pm tgt-p">Cast + fp32 out_buffer</span><span class="fate"><span class="fchip tune">调优</span></span><span class="reason">保留混合精度：Cube fp16、累加 fp32</span></div>
+              <div class="ptab-row"><span class="pm src-p">tl.store(L, lse)</span><span class="pm tgt-p">MTE · DataCopy(LSE)</span><span class="fate"><span class="fchip tune">调优</span></span><span class="reason">回写 logsumexp 供 backward，须对齐布局</span></div>
+              <div class="ptab-row"><span class="pm src-p">hi=(start_m+1)*BLOCK_M</span><span class="pm tgt-p">分块循环上界裁剪</span><span class="fate"><span class="fchip tune">调优</span></span><span class="reason">因果下三角只算必要块，逻辑须显式移植</span></div>
+              <div class="ptab-row"><span class="pm src-p">make_block_ptr / advance</span><span class="pm tgt-p">AscendC Tiling 描述</span><span class="fate"><span class="fchip custom">重写</span></span><span class="reason">块指针+转置读入 → 手写 tiling/搬运，受 UB 约束</span></div>
+              <div class="ptab-row"><span class="pm src-p">num_stages=4 隐式流水</span><span class="pm tgt-p">Ping-Pong 双缓冲</span><span class="fate"><span class="fchip custom">重写</span></span><span class="reason">Triton 自动的多级流水须手写乒乓</span></div>
+            </div>
+          </div>
+
+          <!-- 3. memory hierarchy -->
+          <div class="dd-sec">
+            <div class="dd-sec-h"><span class="dd-sec-n">3</span><span class="dd-sec-t">内存层级：隐式缓存 vs 显式管理</span><span class="dd-sec-d">迁移工作量的真正来源</span></div>
+            <div class="mem-cols">
+              <div class="mem-stack gpu">
+                <div class="mem-sh">GPU 内存层级</div>
+                <div class="mem-lvl"><span class="mn">Register</span><span class="md">线程私有，编译器分配</span><span class="mtag imp">隐式</span></div>
+                <div class="mem-lvl"><span class="mn">Shared</span><span class="md">block 内共享，手动但灵活</span><span class="mtag imp">半隐式</span></div>
+                <div class="mem-lvl"><span class="mn">L2 Cache</span><span class="md">硬件自动缓存 HBM</span><span class="mtag imp">隐式</span></div>
+                <div class="mem-lvl"><span class="mn">HBM</span><span class="md">全局显存</span><span class="mtag imp">隐式</span></div>
+              </div>
+              <div class="mem-stack npu">
+                <div class="mem-sh">昇腾内存层级</div>
+                <div class="mem-lvl"><span class="mn">UB</span><span class="md">Vector 缓冲，容量硬顶 192KB</span><span class="mtag exp">显式</span></div>
+                <div class="mem-lvl"><span class="mn">L1</span><span class="md">片上缓冲，须手动搬入搬出</span><span class="mtag exp">显式</span></div>
+                <div class="mem-lvl"><span class="mn">L0A/B/C</span><span class="md">Cube 输入输出缓冲</span><span class="mtag exp">显式</span></div>
+                <div class="mem-lvl"><span class="mn">HBM</span><span class="md">全局，靠 MTE 指令搬</span><span class="mtag exp">显式</span></div>
+              </div>
+              <div class="mem-note">GPU 上"分块能不能放下"由缓存自动兜底，写错顶多变慢；昇腾上 <b>UB 是硬容量约束</b>——本算子 <span class="mono-sm">BLOCK_M=128 / BLOCK_N=64 / DIM=64</span>，qk 与 out_buffer 均为 fp32（各 32KB），叠加 fp16 的 Q/K/V 分块与 num_stages=4 级多缓冲后峰值 ~226KB，直接溢出 192KB，编译器会拒绝。所以 Tiling 不是优化项而是<b>能否跑通的前提</b>，这是第 4 节第一个鸿沟的根因。</div>
+            </div>
+          </div>
+
+          <!-- 4. quantified gaps -->
+          <div class="dd-sec" style="border-bottom:none">
+            <div class="dd-sec-h"><span class="dd-sec-n">4</span><span class="dd-sec-t">四处硬件鸿沟 · 量化与归属</span><span class="dd-sec-d">谁来解决</span></div>
+            <div class="gap-list">
+              <div class="gapc err">
+                <div class="gapc-h">
+                  <span class="gapc-sev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.3 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg></span>
+                  <div><div class="gapc-t">UB 溢出</div><div class="gapc-loc">flash_attn.py : 6 · BLOCK_M / qk / out_buffer</div></div>
+                  <span class="gapc-who who-self">助手自动</span>
+                </div>
+                <div class="gapc-b">
+                  qk 与 out_buffer 均 fp32（各 32KB），叠加 fp16 的 Q/K/V 分块与 num_stages=4 多缓冲，峰值 ~226KB，超出 UB 的 192KB，<b>编译直接失败</b>。
+                  <div class="gg"><span class="gk">现状</span><span class="gv"><span class="src-p">BLOCK_M=128</span> → 226KB 峰值</span><span class="gk">方案</span><span class="gv"><span class="tgt-p">BLOCK_M=64</span> + 16 对齐 → 146KB</span></div>
+                  <div class="gapc-cta"><button onclick="closeDiff();cmdUB()">→ 执行「规划 UB / Tiling」</button></div>
+                </div>
+              </div>
+              <div class="gapc err">
+                <div class="gapc-h">
+                  <span class="gapc-sev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+                  <div><div class="gapc-t">缺乏软件流水</div><div class="gapc-loc">flash_attn.py : 25 · K/V 循环 · num_stages=4</div></div>
+                  <span class="gapc-who who-self">助手自动</span>
+                </div>
+                <div class="gapc-b">
+                  Triton 用 <span class="mono-sm">num_stages=4</span> 自动生成多级软件流水；昇腾上 MTE 搬 K/V 时 <b>Cube 空转</b>，利用率仅 44%。
+                  <div class="gg"><span class="gk">现状</span><span class="gv">串行搬运，Cube 空转 56%</span><span class="gk">方案</span><span class="gv"><span class="tgt-p">Ping-Pong</span> 双缓冲预取 → Cube 88%</span></div>
+                  <div class="gapc-cta"><button onclick="closeDiff();if(state.ub){cmdPipe()}else{cmdUB()}">→ 执行「注入流水线」</button></div>
+                </div>
+              </div>
+              <div class="gapc err">
+                <div class="gapc-h">
+                  <span class="gapc-sev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></span>
+                  <div><div class="gapc-t">块指针语义须重写为 Tiling</div><div class="gapc-loc">flash_attn.py : 11-14, 38-39 · make_block_ptr / advance</div></div>
+                  <span class="gapc-who who-self">助手自动</span>
+                </div>
+                <div class="gapc-b">
+                  <span class="mono-sm">make_block_ptr</span> 用块指针+转置读入 K，<span class="mono-sm">advance</span> 在循环里推进——昇腾没有对应原语，须改写成显式 tiling 描述 + MTE 搬运，并处理 K 转置与 SEQLEN 尾块非对齐（1024 可整除但非对齐 shape 需 Pack）。
+                  <div class="gg"><span class="gk">现状</span><span class="gv"><span class="src-p">block_ptr + advance</span> 隐式偏移</span><span class="gk">方案</span><span class="gv"><span class="tgt-p">GlobalTensor + tiling</span>，DataCopy 显式搬</span></div>
+                  <div class="gapc-cta"><button onclick="closeDiff();cmdUB()">→ 随「规划 UB / Tiling」一并生成</button></div>
+                </div>
+              </div>
+              <div class="gapc warn">
+                <div class="gapc-h">
+                  <span class="gapc-sev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 14h7v7h-7z"/><path d="M14 3l7 7M3 21l7-7"/></svg></span>
+                  <div><div class="gapc-t">因果分块效率（非退化）</div><div class="gapc-loc">flash_attn.py : 22, 28-30 · hi=(start_m+1)*BLOCK_M + tl.where</div></div>
+                  <span class="gapc-who who-self">助手自动</span>
+                </div>
+                <div class="gapc-b">
+                  这里因果掩码是 <b>dot 前 <span class="mono-sm">tl.where</span> 预掩</b>（→ Vector Select，原生可映），配合 <span class="mono-sm">hi</span> 上界只算下三角块——<b>不是 masked-store 退化</b>。真正的优化点是对角块仍逐元素 Select、上三角块靠循环上界跳过，须在昇腾侧显式移植这套分块判定，否则要么算多、要么 Select 开销大。
+                  <div class="gg"><span class="gk">现状</span><span class="gv">整块 Select + 循环上界裁剪</span><span class="gk">方案</span><span class="gv"><span class="tgt-p">全算/对角/跳过</span>三态分块，省 ~40% Cube</span></div>
+                  <div class="gapc-cta"><button onclick="closeDiff();if(state.pipe){cmdMask()}else{toast('info','因果分块建议在流水线之后执行')}">→ 执行「因果分块优化」</button></div>
+                </div>
+              </div>
+              <div class="gapc err" style="border-color:var(--err)">
+                <div class="gapc-h">
+                  <span class="gapc-sev" style="background:rgba(224,96,79,.14);color:var(--err)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></span>
+                  <div><div class="gapc-t">深度融合（最后一公里）</div><div class="gapc-loc">整算子 · FlashAttentionScore 级</div></div>
+                  <span class="gapc-who who-infra">依赖 Infra</span>
+                </div>
+                <div class="gapc-b">
+                  从 70% 摸到 95%+ 需要跨 Q/K/V/softmax 的整体融合与 L0/寄存器级调度，超出自动生成能力边界。
+                  <div class="gg"><span class="gk">现状</span><span class="gv">助手自动版 ~70% GPU 吞吐</span><span class="gk">交付</span><span class="gv">已备 shape/dtype/LSE/测试的 <span class="tgt-p">Infra 需求单</span></span></div>
+                  <div class="gapc-cta"><button onclick="botReply('已按当前 shape/dtype/精度生成 <b>Infra 算子需求单</b>：语义（含 LSE 回写供 backward）、输入输出 shape (1,2,1024,64)、fp16 计算 + fp32 累加、causal=True、3 组测试用例、性能目标 ≥95%、依赖 CANN 8.0。仅此融合算子需交付 Infra。');toast('ok','Infra 需求单已生成')">→ 生成 Infra 需求单</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TARGET pane: code (top) + viz (bottom) -->
+      <div class="fpane tgt">
+        <div class="fpane-head">
+          <span class="fname"><svg viewBox="0 0 24 24" fill="currentColor" class="dot-tgt"><circle cx="12" cy="12" r="4"/></svg>flash_attn_ascend.cce</span>
+          <span class="fmeta" id="tgtMeta">AscendC · 待生成</span>
+        </div>
+        <div class="code" id="tgtCode" style="flex:0 0 46%;border-bottom:1px solid var(--line)"></div>
+
+        <!-- viz panel -->
+        <div class="viz">
+          <div class="viz-tabs">
+            <button class="vtab on" data-v="ub" onclick="switchViz('ub')"><span class="vdot"></span>UB 规划</button>
+            <button class="vtab" data-v="pipe" onclick="switchViz('pipe')"><span class="vdot"></span>流水线</button>
+            <button class="vtab" data-v="perf" onclick="switchViz('perf')"><span class="vdot"></span>性能</button>
+          </div>
+          <div class="viz-body">
+            <!-- UB pane -->
+            <div class="viz-pane on" id="viz-ub">
+              <div class="viz-empty" id="ubEmpty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 7V5m5 2V5m5 2V5"/></svg>
+                点击右侧 Copilot 的 <b style="color:var(--tgt)">「规划 UB」</b> 命令<br>生成 Tiling 代码并在此分析 UB 占用
+              </div>
+              <div id="ubContent" style="display:none">
+                <div class="ub-top">
+                  <div class="ub-chip-sel">
+                    <button class="ub-chip on" data-chip="a2" onclick="setChip('a2')">Atlas A2 · 192KB</button>
+                    <button class="ub-chip" data-chip="300" onclick="setChip('300')">Atlas 300 · 128KB</button>
+                  </div>
+                  <span class="ub-cap">UB 容量 <b id="ubCap">192 KB</b></span>
+                </div>
+                <div class="ubar-wrap">
+                  <div class="ubar-labels"><span>Unified Buffer 占用</span><span id="ubTotal">226 KB</span></div>
+                  <div class="ubar" id="ubar"><div class="limit" id="ubLimit"></div></div>
+                </div>
+                <div class="ub-params" id="ubParams"></div>
+                <div class="ub-verdict bad" id="ubVerdict">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.3 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/></svg>
+                  <span id="ubVerdictTxt"><b>UB 溢出。</b> BLOCK_M=128 需 226KB，超出 192KB。已在 .cce 中生成静态 Tiling，需下调分块。</span>
+                </div>
+              </div>
+            </div>
+            <!-- Pipe pane -->
+            <div class="viz-pane" id="viz-pipe">
+              <div class="viz-empty" id="pipeEmpty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                点击 <b style="color:var(--tgt)">「注入流水线」</b> 命令<br>为 .cce 加入双缓冲并在此对比 Cube 利用率
+              </div>
+              <div id="pipeContent" style="display:none">
+                <div class="pp-row">
+                  <div class="pp-lab"><span class="pn">串行搬运（注入前）</span><span class="util lo">Cube 44%</span></div>
+                  <div class="pp-tls">
+                    <div class="tl"><span class="lane-lab">MTE</span>
+                      <div class="blk mte" style="left:32px;width:56px">Ld K0</div>
+                      <div class="blk idle" style="left:88px;width:56px">idle</div>
+                      <div class="blk mte" style="left:200px;width:56px">Ld K1</div>
+                    </div>
+                    <div class="tl"><span class="lane-lab">Cube</span>
+                      <div class="blk idle" style="left:32px;width:56px">idle</div>
+                      <div class="blk cube" style="left:88px;width:56px">QK⁰</div>
+                      <div class="blk idle" style="left:144px;width:56px">idle</div>
+                      <div class="blk cube" style="left:256px;width:56px">QK¹</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pp-row">
+                  <div class="pp-lab"><span class="pn">Ping-Pong 双缓冲（注入后）</span><span class="util hi">Cube 88%</span></div>
+                  <div class="pp-tls">
+                    <div class="tl"><span class="lane-lab">MTE</span>
+                      <div class="blk mte" style="left:32px;width:56px">Ld K0</div>
+                      <div class="blk mte" style="left:88px;width:56px">Ld K1</div>
+                      <div class="blk mte" style="left:144px;width:56px">Ld K2</div>
+                    </div>
+                    <div class="tl"><span class="lane-lab">Cube</span>
+                      <div class="blk idle" style="left:32px;width:56px">idle</div>
+                      <div class="blk cube" style="left:88px;width:56px">QK⁰</div>
+                      <div class="blk cube" style="left:144px;width:56px">QK¹</div>
+                      <div class="blk cube" style="left:200px;width:56px">QK²</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pp-note">MTE 预取下一 K/V 分块与 Cube 计算当前分块重叠，Cube 空转从 56% 降到 12%。</div>
+              </div>
+            </div>
+            <!-- Perf pane -->
+            <div class="viz-pane" id="viz-perf">
+              <div class="viz-empty" id="perfEmpty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18M7 15l4-5 3 3 5-7"/></svg>
+                运行 <b style="color:var(--tgt)">「毕昇编译 + 验证」</b><br>通过后在此展示硬件利用率与对齐 GPU 的进度
+              </div>
+              <div id="perfContent" style="display:none">
+                <div class="perf-grid">
+                  <div class="pcard"><div class="pkk">Cube 利用率</div><div class="pmeter"><i style="width:70%;background:var(--tgt)"></i></div><div class="pval" style="color:var(--tgt)">70%</div></div>
+                  <div class="pcard"><div class="pkk">MTE 带宽</div><div class="pmeter"><i style="width:82%;background:#6fb8e0"></i></div><div class="pval" style="color:#6fb8e0">82%</div></div>
+                  <div class="pcard"><div class="pkk">UB 占用</div><div class="pmeter"><i style="width:76%;background:#8fc98a"></i></div><div class="pval" style="color:#8fc98a">146/192 KB</div></div>
+                  <div class="pcard"><div class="pkk">精度误差</div><div class="pmeter"><i style="width:12%;background:var(--ok)"></i></div><div class="pval" style="color:var(--ok)">4.1e-3 ✓</div></div>
+                </div>
+                <div class="perf-path">
+                  <div class="ppath-t">对齐 GPU 吞吐的路径</div>
+                  <div class="ppb"><i style="width:15%;background:var(--err)">15%</i><span class="pl">朴素直译（无 Tiling/流水）</span></div>
+                  <div class="ppb"><i style="width:70%;background:var(--tgt)">70%</i><span class="pl">助手自动版（当前）</span></div>
+                  <div class="ppb"><i style="width:95%;background:var(--ok)">≥95%</i><span class="pl">Infra 深度融合（FlashAttentionScore）</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==== COPILOT ==== -->
+    <div class="copilot">
+      <div class="cop-head">
+        <div class="cop-logo">◈</div>
+        <span class="ct">迁移 Copilot</span>
+        <span class="cs">在线</span>
+      </div>
+      <div class="cop-body" id="copBody">
+        <!-- user import msg -->
+        <div class="msg user">
+          <div class="av">你</div>
+          <div class="bubble">
+            <span class="attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7.5-7.5"/></svg>flash_attn.py 已导入</span>
+            <p>把这个 Triton FlashAttention 迁移到昇腾 Atlas A2，先跑通再优化。</p>
+          </div>
+        </div>
+        <!-- bot: analysis + commands -->
+        <div class="msg bot">
+          <div class="av">◈</div>
+          <div class="bubble">
+            <p>已解析 <b>openai/triton FA2</b> 源码并完成 <b>GPU→NPU 差异分析</b>（已在左侧打开）：SIMT→DSA 执行模型对照、16 个原语逐条裁决、内存层级差异、<b>4 处硬件鸿沟</b>（含 block_ptr 语义、num_stages 流水、因果分块、深度融合）。我按顺序生成对应的昇腾代码——<b>每执行一步，右边 .cce 文件会插入对应片段并在下方可视化。</b></p>
+            <button class="cmd" onclick="openDiff()" style="margin-bottom:4px">
+              <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4zM4 9h16M9 9v11"/></svg></span>
+              <span class="cbody"><span class="cname">查看差异分析文档</span><span class="cdesc">执行模型 / 原语裁决 / 内存层级 / 鸿沟归属</span></span>
+            </button>
+            <div class="card">
+              <div class="card-h plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>迁移方案 · 4 步</div>
+              <div class="card-b">
+                <div class="row"><span class="dot-tgt">●</span>算子整体映射到 <span class="mono-sm">Cube+Vector</span>，非融合部分拼基线</div>
+                <div class="row"><span style="color:var(--err)">●</span>UB 溢出、缺乏乒乓、掩码退化需逐一处理</div>
+                <div class="row"><span class="dot-tgt">●</span>目标：自动跑到 ~70%，深度融合留给 Infra</div>
+              </div>
+            </div>
+            <div class="cmd-list" id="cmdList">
+              <button class="cmd" id="cmd-ub" onclick="cmdUB()">
+                <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 7V5m5 2V5m5 2V5"/></svg></span>
+                <span class="cbody"><span class="cname">规划 UB / Tiling <span class="cstat todo" id="st-ub">待执行</span></span><span class="cdesc">静态推导对齐分块，解 226KB→192KB 溢出</span></span>
+              </button>
+              <button class="cmd" id="cmd-pipe" onclick="cmdPipe()" disabled>
+                <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+                <span class="cbody"><span class="cname">注入流水线 <span class="cstat todo" id="st-pipe">待执行</span></span><span class="cdesc">双缓冲让 MTE 预取与 Cube 计算重叠</span></span>
+              </button>
+              <button class="cmd" id="cmd-mask" onclick="cmdMask()" disabled>
+                <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l16 16M9 9a3 3 0 0 0 4 4"/><path d="M12 5c5 0 9 5 9 7a13 13 0 0 1-2 3M6 6C3.5 7.5 3 11 3 12c0 2 4 7 9 7"/></svg></span>
+                <span class="cbody"><span class="cname">因果分块 + exp 语义 <span class="cstat todo" id="st-mask">待执行</span></span><span class="cdesc">where 预掩→Select、循环上界裁剪、exp2→Exp</span></span>
+              </button>
+              <button class="cmd" id="cmd-comp" onclick="cmdCompile()" disabled>
+                <span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3M9 3v4h6V3M9 13l2 2 4-4"/></svg></span>
+                <span class="cbody"><span class="cname">毕昇编译 + 验证 <span class="cstat todo" id="st-comp">待执行</span></span><span class="cdesc">生成 .o，跑精度对比与性能画像</span></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cop-input">
+        <div class="cin-tools">
+          <button class="cin-tool" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8"/></svg>需求模板</button>
+          <button class="cin-tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8"/></svg>导入文件</button>
+        </div>
+        <div class="cin-box">
+          <textarea id="cinInput" rows="1" placeholder="试试：规划一下内存 / 注入乒乓 / 编译一下" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+          <button class="cin-send" onclick="sendChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- statusbar -->
+  <div class="statusbar">
+    <span class="si"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9c0 6-6 3-12 6"/></svg>migration/flash-attn</span>
+    <span class="si err-c" id="sbErr">✕ 3 阻断</span>
+    <span class="si warn-c" id="sbWarn">▲ 1 警告</span>
+    <span class="sp"></span>
+    <span class="si" id="sbStage">阶段 3/6 · UB 规划</span>
+    <span class="si">Atlas A2 · CANN 8.0</span>
+    <span class="si">毕昇 BiSheng</span>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- modal -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="modal-h">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:18px;height:18px;color:var(--tgt)"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      <span class="mt">新建迁移任务</span>
+      <button class="mx" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-b">
+      三种输入方式汇入同一套 Copilot：<b>导入代码</b>、<b>自然对话</b>、<b>需求模板</b>（泛化场景 / 数据类型 / 性能目标）。当前已导入 <b>flash_attn.py</b>，可继续在右侧对话或点命令逐步生成昇腾代码。
+    </div>
+    <div class="modal-f">
+      <button class="mbtn sec" onclick="closeModal()">继续当前任务</button>
+      <button class="mbtn pri" onclick="closeModal()">好的</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ source code render ============ */
+// Real openai/triton fused-attention (FA2). Each entry: [html, diagFlag?]
+// diag: 'err-ub' | 'err-pipe' | 'warn-mask' | 'warn-blkptr' | 'warn-exp2' | 'warn-fp16'
+const K='<span class="k">',F='<span class="f">',S='<span class="s">',N='<span class="n">',C='<span class="c">',T='<span class="t">',D='<span class="d">',E='</span>';
+const SRC=[
+[`${D}@triton.jit${E}`],
+[`${K}def${E} ${F}_fwd_kernel${E}(Q, K, V, sm_scale, L, O,`],
+[`    stride_q_bs, stride_q_head, stride_q_seqlen, stride_q_dim,`],
+[`    ... (k / v / o strides) ...`],
+[`    BS, HEAD, SEQLEN,`],
+[`    BLOCK_M: ${T}tl.constexpr${E}, DIM: ${T}tl.constexpr${E},`,'err-ub'],
+[`    BLOCK_N: ${T}tl.constexpr${E}, IS_CAUSAL: ${T}tl.constexpr${E}):`],
+[`    start_m = ${F}tl.program_id${E}(${N}0${E})       ${C}# Q 分块 (FA2 外层并行)${E}`],
+[`    off_bs_head = ${F}tl.program_id${E}(${N}1${E})   ${C}# 跳过 (bs,head)${E}`],
+[`    ${C}# —— 用 make_block_ptr 描述分块张量 ——${E}`],
+[`    Q_block_ptr = ${F}tl.make_block_ptr${E}(base=Q+off,`,'warn-blkptr'],
+[`        shape=(SEQLEN, DIM), block_shape=(BLOCK_M, DIM), ...)`],
+[`    K_block_ptr = ${F}tl.make_block_ptr${E}(...)   ${C}# K 转置读入 (DIM,BLOCK_N)${E}`],
+[`    V_block_ptr = ${F}tl.make_block_ptr${E}(...)`],
+[`    ${C}# online-softmax 统计量 (每行一维)${E}`],
+[`    max  = ${F}tl.zeros${E}([BLOCK_M], ${T}tl.float32${E}) - float(${S}'inf'${E})`],
+[`    denom = ${F}tl.zeros${E}([BLOCK_M], ${T}tl.float32${E})`],
+[`    out_buffer = ${F}tl.zeros${E}([BLOCK_M, DIM], ${T}tl.float32${E})`],
+[`    qk_scale = sm_scale * ${N}1.44269504${E}      ${C}# log2(e)，配合 exp2${E}`,'warn-exp2'],
+[`    q = ${F}tl.load${E}(Q_block_ptr)`],
+[`    q = (q * qk_scale).${F}to${E}(${T}tl.float16${E})    ${C}# fp16 计算路径${E}`,'warn-fp16'],
+[`    lo, hi = ${N}0${E}, (start_m+${N}1${E})*BLOCK_M ${K}if${E} IS_CAUSAL ${K}else${E} SEQLEN`],
+[`    ${C}# —— 内层 K/V 循环：GPU 隐式软件流水 (num_stages=4) ——${E}`],
+[`    ${K}for${E} start_n ${K}in${E} range(lo, hi, BLOCK_N):`,'err-pipe'],
+[`        k = ${F}tl.load${E}(K_block_ptr); v = ${F}tl.load${E}(V_block_ptr)`],
+[`        qk = ${F}tl.zeros${E}([BLOCK_M, BLOCK_N], ${T}tl.float32${E})`],
+[`        ${K}if${E} IS_CAUSAL:              ${C}# 因果掩码：dot 前预掩${E}`,'warn-mask'],
+[`            qk = ${F}tl.where${E}(off_m[:,None] >= start_n+off_n,`,'warn-mask'],
+[`                          qk, float(${S}"-inf"${E}))`,'warn-mask'],
+[`        qk += ${F}tl.dot${E}(q, k)          ${C}# Cube: (M,DIM)x(DIM,N)${E}`],
+[`        max_new = ${F}tl.maximum${E}(max, ${F}tl.max${E}(qk, ${N}1${E}))`],
+[`        alpha = ${F}tl.math.exp2${E}(max - max_new)`,'warn-exp2'],
+[`        nume  = ${F}tl.math.exp2${E}(qk - max_new[:,None])`,'warn-exp2'],
+[`        out_buffer *= alpha[:,None]`],
+[`        out_buffer += ${F}tl.dot${E}(nume.${F}to${E}(${T}tl.float16${E}), v)`,'warn-fp16'],
+[`        denom = denom*alpha + ${F}tl.sum${E}(nume, ${N}1${E})`],
+[`        max = max_new`],
+[`        K_block_ptr = ${F}tl.advance${E}(K_block_ptr, (${N}0${E}, BLOCK_N))`,'warn-blkptr'],
+[`        V_block_ptr = ${F}tl.advance${E}(V_block_ptr, (BLOCK_N, ${N}0${E}))`,'warn-blkptr'],
+[`    out_buffer = out_buffer / denom[:,None]`],
+[`    ${F}tl.store${E}(L_ptr, max + ${F}tl.math.log2${E}(denom))  ${C}# 存 LSE 供 backward${E}`,'warn-lse'],
+[`    ${F}tl.store${E}(O_block_ptr, out_buffer.${F}to${E}(${T}tl.float16${E}))`],
+];
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function renderSrc(){
+  const c=document.getElementById('srcCode');let h='';
+  SRC.forEach((row,i)=>{
+    let cls='ln',flag=row[1]||'';
+    if(flag.startsWith('err-')){cls+=' diag-err wave-err'}
+    else if(flag.startsWith('warn-')){cls+=' diag-warn wave-warn'}
+    h+=`<div class="${cls}" data-diag="${flag}"><span class="num">${i+1}</span><span class="txt">${row[0]}</span></div>`;
+  });
+  c.innerHTML=h;
+}
+renderSrc();
+
+/* ============ target code: progressive blocks ============ */
+const state={ub:false,pipe:false,mask:false,comp:false,errors:3,warns:1};
+
+const TGT_BLOCKS={
+  base:{tag:'基线骨架 · 语义映射',lines:[
+    ['c','// flash_attn_ascend.cce  —— AscendC (FA2)'],
+    ['c','// tl.dot→Cube  exp2/max→Vector  tl.load→MTE  fp16算/fp32累加'],
+    ['k','template',' <','t','typename',' T>'],
+    ['k','__aicore__',' ','k','inline void',' ','f','FlashAttn','(GM_ADDR q, GM_ADDR k,'],
+    ['','                              GM_ADDR v, GM_ADDR l, GM_ADDR o) {'],
+    ['','  ','f','AscendC::TPipe',' pipe;'],
+    ['','  ','c','// TODO: tiling / pipeline / causal / exp'],
+    ['','}'],
+  ]},
+  ub:{tag:'① 静态 Tiling + UB 预算 (替代 make_block_ptr)',lines:[
+    ['c','  // —— block_ptr/advance → 显式 tiling；BLOCK_M 128→64 ——'],
+    ['k','  constexpr int',' BLOCK_M = ','n','64',';   ','c','// was 128, UB 溢出'],
+    ['k','  constexpr int',' BLOCK_N = ','n','64',';   ','c','// K/V 分块'],
+    ['k','  constexpr int',' DIM = ','n','64',';'],
+    ['','  ','f','GlobalTensor','<T> kGm; kGm.','f','SetGlobalBuffer','(k);  ','c','// K 转置在搬运时处理'],
+    ['','  ','f','TQue','<QuePosition::VECIN, ','n','2','> qK, qV;   ','c','// 双缓冲深度2'],
+    ['','  pipe.','f','InitBuffer','(qK, BLOCK_N*DIM*','k','sizeof','(T));'],
+    ['','  ','c','// out_buffer/qk 用 fp32；UB 峰值 146KB < 192KB ✓'],
+  ]},
+  pipe:{tag:'② Ping-Pong 流水线注入 (替代 num_stages=4)',lines:[
+    ['c','  // —— MTE 预取下一 K/V 分块与 Cube 计算重叠 ——'],
+    ['k','  for',' (int ','n','n',' = ','n','0','; n < hi; n += BLOCK_N) {'],
+    ['','    kLocal = qK.','f','AllocTensor','<T>();'],
+    ['','    ','f','DataCopy','(kLocal, kGm[n+BLOCK_N], BLOCK_N*DIM); ','c','// 预取 n+1'],
+    ['','    ','f','Mmad','(qkAcc, qLocal, kLocal, mmp);   ','c','// Cube 算 n (fp32)'],
+    ['','    qK.','f','FreeTensor','(kLocal);'],
+    ['','  }'],
+  ]},
+  mask:{tag:'③ 因果分块 + exp (where 预掩→Select)',lines:[
+    ['c','  // —— causal: 循环上界裁剪 + 三态分块，非 masked-store ——'],
+    ['k','  int',' hi = (blockRow+','n','1',')*BLOCK_M;      ','c','// 只算下三角块'],
+    ['k','  if',' (blockCol == blockRow)             ','c','// 对角块: Vector Select 预掩'],
+    ['','    ','f','Select','(qkAcc, triMask, qkAcc, NEG_INF);'],
+    ['','  p = ','f','Exp','(qkAcc - rowMax);   ','c','// exp2+log2(e) → 昇腾 Exp (底 e)'],
+    ['','  ','c','// 上三角块由 hi 上界跳过, 省 ~40% Cube'],
+  ]},
+};
+
+let tgtRendered=[];
+function renderTgt(){
+  const c=document.getElementById('tgtCode');
+  if(tgtRendered.length===0){
+    c.innerHTML='<div class="tgt-empty"><div class="te-title">尚未生成昇腾代码</div>点击右侧 <code>规划 UB</code> 等命令，<br>助手会将对应片段插入此文件并高亮。<br>下方面板会同步该步骤的可视化分析。</div>';
+    return;
+  }
+  let h='',ln=1;
+  tgtRendered.forEach(bk=>{
+    const blk=TGT_BLOCKS[bk.key];
+    h+=`<div class="block-tag"><span class="bt-dot"></span>${blk.tag}</div>`;
+    blk.lines.forEach((cells,idx)=>{
+      let txt='';
+      for(let j=0;j<cells.length;j++){
+        const tk=cells[j];
+        if(['k','f','s','n','c','d','t','o'].includes(tk)&&j+1<cells.length){txt+=`<span class="${tk}">${esc(cells[j+1])}</span>`;j++}
+        else txt+=esc(tk);
+      }
+      const inj=bk.fresh?' inject':'';
+      h+=`<div class="ln${inj}"><span class="num">${ln++}</span><span class="txt">${txt}</span></div>`;
+    });
+  });
+  c.innerHTML=h;
+  // scroll newest into view
+  const last=c.querySelector('.ln.inject');
+  if(last)last.scrollIntoView({behavior:'smooth',block:'center'});
+  tgtRendered.forEach(b=>b.fresh=false);
+}
+function addBlock(key){
+  if(tgtRendered.length===0)tgtRendered.push({key:'base',fresh:false});
+  if(!tgtRendered.find(b=>b.key===key))tgtRendered.push({key,fresh:true});
+  renderTgt();
+}
+
+/* ============ commands ============ */
+function markCmd(id,statId){
+  const el=document.getElementById(id);el.classList.add('done');
+  const s=document.getElementById(statId);s.className='cstat done';s.textContent='已完成';
+}
+function enable(id){document.getElementById(id).disabled=false}
+function updateStatus(){
+  document.getElementById('sbErr').textContent=state.errors>0?`✕ ${state.errors} 阻断`:'✓ 0 阻断';
+  document.getElementById('sbErr').className='si '+(state.errors>0?'err-c':'');
+  document.getElementById('actBadge').textContent=state.errors;
+  document.getElementById('actBadge').style.display=state.errors>0?'flex':'none';
+}
+function setStage(n,label){
+  for(let i=0;i<6;i++){const p=document.getElementById('ps'+i);p.classList.remove('active');if(i<n)p.classList.add('done'),p.querySelector('.pd').textContent='✓';}
+  if(n<6){const p=document.getElementById('ps'+n);p.classList.add('active')}
+  document.getElementById('sbStage').textContent=`阶段 ${n+1>6?6:n+1}/6 · ${label}`;
+}
+
+function cmdUB(){
+  if(state.ub)return;
+  state.ub=true;state.errors--;
+  addBlock('ub');
+  markCmd('cmd-ub','st-ub');enable('cmd-pipe');
+  // reveal UB viz
+  document.getElementById('ubEmpty').style.display='none';
+  document.getElementById('ubContent').style.display='block';
+  document.querySelector('[data-v="ub"]').classList.add('ready');
+  switchViz('ub');
+  applyUB('a2',true); // start overflow then auto-fix
+  document.getElementById('tgtMeta').textContent='AscendC · Tiling 已生成';
+  document.getElementById('genTag').textContent='4/8';
+  setStage(3,'流水线注入');
+  updateStatus();
+  botReply('已在 .cce 生成<b>静态 Tiling</b>：BLOCK_M 从 128 降到 64、尾块 16 对齐，UB 从 226KB 降到 <b>146KB</b>，装进 192KB 并给双缓冲留了余量。下方 UB 面板可切芯片查看——换 Atlas 300（128KB）会重新溢出。');
+  toast('ok','UB 规划完成 · 溢出已解除');
+}
+function cmdPipe(){
+  if(!state.ub||state.pipe)return;
+  state.pipe=true;
+  addBlock('pipe');
+  markCmd('cmd-pipe','st-pipe');enable('cmd-mask');
+  document.getElementById('pipeEmpty').style.display='none';
+  document.getElementById('pipeContent').style.display='block';
+  document.querySelector('[data-v="pipe"]').classList.add('ready');
+  switchViz('pipe');
+  document.getElementById('genTag').textContent='6/8';
+  setStage(4,'掩码改写');
+  botReply('已注入 <b>Ping-Pong 双缓冲</b>（深度 2）。下方时间线对比：MTE 预取下一 K/V 分块与 Cube 计算重叠，Cube 利用率从 <b>44% → 88%</b>。');
+  toast('ok','流水线注入 · Cube 44%→88%');
+}
+function cmdMask(){
+  if(!state.pipe||state.mask)return;
+  state.mask=true;state.warns--;
+  addBlock('mask');
+  markCmd('cmd-mask','st-mask');enable('cmd-comp');
+  document.getElementById('genTag').textContent='8/8';
+  document.getElementById('genTag').style.background='rgba(79,180,119,.15)';
+  document.getElementById('genTag').style.color='var(--ok)';
+  document.getElementById('sbWarn').textContent=state.warns>0?`▲ ${state.warns} 警告`:'✓ 0 警告';
+  setStage(5,'编译验证');
+  botReply('已移植<b>因果分块 + exp 语义</b>：源码用 <b>dot 前 tl.where 预掩</b>（→ Vector Select，本就原生）配合 <span class="mono-sm">hi=(start_m+1)*BLOCK_M</span> 只算下三角块——不是 masked-store 退化。昇腾侧改为对角块 Select、上三角靠循环上界跳过，省约 40% Cube；同时把 <span class="mono-sm">exp2+log2(e)</span> 归一成昇腾以 e 为底的 Exp。可以编译了。');
+  toast('ok','因果分块完成 · exp 语义已归一');
+}
+function cmdCompile(){
+  if(!state.comp && (!state.ub)){
+    // causal: compile before UB planned → fail
+    switchViz('perf');
+    botReply('<b style="color:var(--err)">编译中止。</b> 终端报 <span class="mono-sm">UB overflow, 226KB &gt; 192KB</span>。请先执行「规划 UB / Tiling」再编译——这跟真实工作一致，UB 预算不过关编译器直接拒绝。');
+    toast('err','编译失败 · UB 溢出，需先规划 Tiling');
+    return;
+  }
+  if(state.comp)return;
+  if(!state.pipe){
+    botReply('编译通过，但 <b style="color:var(--warn)">未注入流水线</b>：Cube 利用率仅 41%。建议先「注入流水线」再编译以达到 ~70%。');
+    toast('info','编译通过但性能受限 · 建议注入流水线');
+    return;
+  }
+  state.comp=true;
+  markCmd('cmd-comp','st-comp');
+  document.getElementById('perfEmpty').style.display='none';
+  document.getElementById('perfContent').style.display='block';
+  document.querySelector('[data-v="perf"]').classList.add('ready');
+  switchViz('perf');
+  document.getElementById('tgtMeta').textContent='AscendC · 编译通过 ✓';
+  document.getElementById('genTag').textContent='✓';
+  setStage(6,'完成');
+  let extra=state.mask?'':' <b style="color:var(--warn)">（掩码未改写，存在退化路径警告）</b>';
+  botReply('<b style="color:var(--ok)">毕昇编译通过。</b> 精度误差 4.1e-3 ✓，首版吞吐达 GPU 的 <b>70%</b>。'+extra+' 下方性能面板显示：朴素直译只有 15%，摸到 95%+ 的 FlashAttentionScore 级深度融合才需要 Infra——依赖被压到最后一公里。');
+  toast('ok','编译通过 · 精度达标 · 70% GPU 吞吐');
+}
+
+/* ============ UB viz logic ============ */
+const CHIPS={a2:{cap:192,limitPct:100},'300':{cap:128,limitPct:100}};
+let curChip='a2';
+function setChip(c){
+  curChip=c;
+  document.querySelectorAll('.ub-chip').forEach(b=>b.classList.toggle('on',b.dataset.chip===c));
+  document.getElementById('ubCap').textContent=CHIPS[c].cap+' KB';
+  applyUB(c,false);
+}
+function applyUB(chip,animate){
+  const cap=CHIPS[chip].cap;
+  const bar=document.getElementById('ubar');
+  const scaleMax=cap*1.42;
+  const seg=(v)=>v/scaleMax*100;
+  const fitted={qkv:64,sm:42,buf:40}; // total 146
+  const total=fitted.qkv+fitted.sm+fitted.buf;
+  let html=`<div class="limit" style="left:${seg(cap)}%" data-lab="${cap}KB 上限"></div>`;
+  if(total<=cap){
+    html+=`<div class="useg qkv" style="left:0;width:${seg(fitted.qkv)}%">Q·K·V ${fitted.qkv}K</div>`;
+    html+=`<div class="useg sm" style="left:${seg(fitted.qkv)}%;width:${seg(fitted.sm)}%">softmax ${fitted.sm}K</div>`;
+    html+=`<div class="useg buf" style="left:${seg(fitted.qkv+fitted.sm)}%;width:${seg(fitted.buf)}%">双缓冲 ${fitted.buf}K</div>`;
+  }else{
+    const over=total-cap;
+    html+=`<div class="useg qkv" style="left:0;width:${seg(fitted.qkv)}%">Q·K·V</div>`;
+    html+=`<div class="useg sm" style="left:${seg(fitted.qkv)}%;width:${seg(fitted.sm)}%">softmax</div>`;
+    html+=`<div class="useg buf" style="left:${seg(fitted.qkv+fitted.sm)}%;width:${seg(cap-fitted.qkv-fitted.sm)}%">缓冲(截断)</div>`;
+    html+=`<div class="useg over" style="left:${seg(cap)}%;width:${seg(over)}%">溢出+${over}K</div>`;
+  }
+  bar.innerHTML=html;
+  document.getElementById('ubTotal').textContent=total+' KB';
+  // params
+  document.getElementById('ubParams').innerHTML=`
+    <div class="ub-param"><div class="pk">BLOCK_M</div><div class="pv">64 <small>← 128</small></div></div>
+    <div class="ub-param"><div class="pk">BLOCK_N</div><div class="pv">128</div></div>
+    <div class="ub-param"><div class="pk">尾块对齐</div><div class="pv">16<small>B</small></div></div>
+    <div class="ub-param"><div class="pk">UB 峰值</div><div class="pv" style="color:${total<=cap?'var(--ok)':'var(--err)'}">${total}<small>/${cap}K</small></div></div>`;
+  const v=document.getElementById('ubVerdict'),vt=document.getElementById('ubVerdictTxt');
+  if(total<=cap){
+    v.className='ub-verdict good';
+    v.querySelector('svg').innerHTML='<path d="M20 6 9 17l-5-5"/>';
+    vt.innerHTML=`<b>UB 装下。</b> 峰值 ${total}KB &lt; ${cap}KB，含深度 2 双缓冲余量。已写入 .cce 的静态 Tiling。`;
+  }else{
+    v.className='ub-verdict bad';
+    v.querySelector('svg').innerHTML='<path d="M12 9v4m0 4h.01M10.3 3.3 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/>';
+    vt.innerHTML=`<b>UB 溢出 ${total-cap}KB。</b> ${cap}KB 的 Atlas 300 装不下当前分块，需进一步下调 BLOCK_M 或拆 softmax 统计量。`;
+  }
+}
+
+/* ============ viz tab switch ============ */
+function switchViz(v){
+  if(v==='none')return;
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));
+  document.querySelectorAll('.viz-pane').forEach(p=>p.classList.toggle('on',p.id==='viz-'+v));
+}
+
+/* ============ chat ============ */
+function botReply(html){
+  const b=document.getElementById('copBody');
+  const m=document.createElement('div');m.className='msg bot';
+  m.innerHTML=`<div class="av">◈</div><div class="bubble"><p>${html}</p></div>`;
+  b.appendChild(m);b.scrollTop=b.scrollHeight;
+}
+function userMsg(txt){
+  const b=document.getElementById('copBody');
+  const m=document.createElement('div');m.className='msg user';
+  m.innerHTML=`<div class="av">你</div><div class="bubble">${esc(txt)}</div>`;
+  b.appendChild(m);b.scrollTop=b.scrollHeight;
+}
+function sendChat(){
+  const inp=document.getElementById('cinInput');const t=inp.value.trim();if(!t)return;
+  userMsg(t);inp.value='';
+  const s=t.toLowerCase();
+  setTimeout(()=>{
+    if(/差异|分析|区别|对比.*gpu|gpu.*npu|执行模型|原语/.test(s)){openDiff();botReply('已打开 <b>GPU→NPU 差异分析</b>：执行模型对照、16 个原语逐条裁决、内存层级差异、4 处硬件鸿沟的量化与归属都在左侧文档里。可从每处鸿沟直接跳到对应命令。')}
+    else if(/内存|ub|tiling|分块/.test(s)){cmdUB()}
+    else if(/乒乓|流水|ping|pipe|双缓冲/.test(s)){if(!state.ub){botReply('先规划 UB 才能注入流水线——我先执行 UB 规划。');cmdUB()}else cmdPipe()}
+    else if(/掩码|mask|因果|causal/.test(s)){if(!state.pipe){botReply('因果分块建议在流水线之后。');}else cmdMask()}
+    else if(/编译|compile|验证|跑/.test(s)){cmdCompile()}
+    else if(/需求单|infra|规格/.test(s)){botReply('已按当前 shape/dtype/精度生成 <b>Infra 算子需求单</b>：语义、输入输出 shape、fp16+fp32累加、3 组测试用例、性能目标 ≥95%、依赖 CANN 8.0。仅深度融合算子需交付 Infra，其余已自助完成。')}
+    else{botReply('我可以按顺序执行：<b>规划 UB</b> → <b>注入流水线</b> → <b>改写掩码</b> → <b>编译验证</b>。也可以直接点上方命令卡，每步都会往 .cce 写代码并更新下方可视化。')}
+  },260);
+}
+
+/* modal + toast */
+function openDiff(){document.getElementById('diffDoc').classList.add('on')}
+function closeDiff(){document.getElementById('diffDoc').classList.remove('on')}
+function openModal(){document.getElementById('modalBg').classList.add('on')}
+function closeModal(){document.getElementById('modalBg').classList.remove('on')}
+document.getElementById('modalBg').addEventListener('click',e=>{if(e.target.id==='modalBg')closeModal()});
+function toast(type,msg){
+  const w=document.getElementById('toastWrap');
+  const icons={ok:'<path d="M20 6 9 17l-5-5"/>',err:'<path d="M18 6 6 18M6 6l12 12"/>',info:'<path d="M12 16v-4m0-4h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/>'};
+  const t=document.createElement('div');t.className='toast '+type;
+  t.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icons[type]}</svg>${msg}`;
+  w.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300)},2600);
+}
+// auto-grow textarea
+document.getElementById('cinInput').addEventListener('input',function(){this.style.height='auto';this.style.height=this.scrollHeight+'px'});
+renderTgt();
+updateStatus();
+// analysis opens automatically right after the algorithm is identified
+setTimeout(()=>openDiff(),400);</script>
+</body>
+</html>
