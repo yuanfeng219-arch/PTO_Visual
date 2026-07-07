@@ -1,26 +1,38 @@
+
 <!doctype html>
-<html lang="zh">
+<html lang="zh" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AscendPort · 算子迁移工作台</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
 <style>
 :root{
-  --bg:#15161c; --chrome:#1b1d25; --chrome2:#202330; --side:#181a22;
-  --edit:#1a1c24; --line:#2a2e3c; --line2:#333849;
-  --txt:#c9cede; --dim:#7a8199; --dim2:#565d73;
-  --acc:#ff415f;         /* AscendPort crimson */
-  --acc-soft:#ff415f22;
+  --bg:var(--app-background, var(--background));
+  --chrome:color-mix(in srgb, var(--background-elevated) 94%, black 6%);
+  --chrome2:color-mix(in srgb, var(--surface-2) 90%, var(--background-elevated));
+  --side:color-mix(in srgb, var(--surface-2) 94%, black 6%);
+  --edit:color-mix(in srgb, var(--surface-1) 86%, black 14%);
+  --line:var(--border-subtle);
+  --line2:var(--border-default);
+  --txt:var(--foreground);
+  --dim:var(--foreground-secondary);
+  --dim2:var(--foreground-muted);
+  --acc:var(--primary);
+  --acc-soft:var(--state-selected);
   --cube:#f2b44a;        /* 矩阵 Cube */
   --vec:#37c7c9;         /* 向量 Vector */
   --scalar:#a98bff;      /* 标量 Scalar */
   --mem:#6c8cff;         /* 片上搬运 */
   --risk:#ff5470;        /* SIMT 专属 · 需重写 */
-  --ok:#48d597;
-  --warn:#f2b44a;
+  --ok:var(--success);
+  --warn:var(--warning);
   --k:#ff7ba6; --ty:#f2b44a; --fn:#68b6ff; --num:#c99bff; --str:#8fd98f; --com:#5b6379; --pp:#e08adf;
-  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
-  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono:var(--font-mono);
+  --sans:var(--font-sans);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -435,6 +447,495 @@ button{font-family:inherit}
   #app{display:none}
   .mobile-note{display:flex;height:100vh;align-items:center;justify-content:center;text-align:center;padding:32px;flex-direction:column;gap:14px;color:var(--dim)}
   .mobile-note b{color:#eef;font-size:16px}
+}
+</style>
+<style>
+body{
+  background:var(--app-background, var(--background));
+  color:var(--foreground);
+  font:var(--text-body-sm);
+}
+
+#app,
+.mobile-note{
+  background:transparent;
+}
+
+.titlebar,
+.activity,
+.sidebar,
+.tabs,
+.edtoolbar,
+.panel,
+.wizard,
+.statusbar,
+.pane-h,
+.gp-head,
+.tp-head,
+.panel-tabs{
+  backdrop-filter:var(--surface-backdrop-filter-soft, none);
+  -webkit-backdrop-filter:var(--surface-backdrop-filter-soft, none);
+}
+
+.titlebar,
+.activity,
+.sidebar,
+.tabs,
+.edtoolbar,
+.panel,
+.wizard{
+  border-color:var(--border-subtle);
+}
+
+.titlebar{
+  min-height:40px;
+  padding:0 14px;
+  background:color-mix(in srgb, var(--background-elevated) 96%, black 4%);
+  box-shadow:inset 0 -1px 0 var(--border-subtle);
+}
+
+.tb-title,
+.tb-menu,
+.etb-path,
+.side-h,
+.gp-head .sub,
+.tp-head .sub,
+.foot-hint,
+.plabels,
+.statusbar .s,
+.panel-tabs > div:last-child{
+  color:var(--foreground-secondary);
+}
+
+.tb-title b,
+.pane-h b,
+.gp-head b,
+.tp-head b,
+.wz-h h1,
+.sc-t b,
+.opmap-h,
+.perf-reg b,
+.acc-card .ac-h,
+.gp-detail b{
+  color:var(--foreground);
+}
+
+.tb-menu{
+  gap:12px;
+}
+
+.tb-badge{
+  min-height:22px;
+  padding:0 10px;
+  border-radius:999px;
+  background:color-mix(in srgb, var(--primary) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  color:color-mix(in srgb, var(--primary) 88%, white 8%);
+  font:var(--text-label);
+}
+
+.tb-badge .dot{
+  width:7px;
+  height:7px;
+  background:currentColor;
+  box-shadow:none;
+}
+
+.activity{
+  padding-top:12px;
+  background:color-mix(in srgb, var(--surface-2) 96%, black 4%);
+}
+
+.act{
+  width:38px;
+  height:38px;
+  border-left:none;
+  border-radius:12px;
+  color:var(--foreground-muted);
+  transition:background var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default);
+}
+
+.act.on{
+  background:var(--state-selected);
+  color:var(--foreground);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+.act:hover{
+  background:var(--state-hover);
+  color:var(--foreground);
+}
+
+.sidebar{
+  background:color-mix(in srgb, var(--surface-2) 92%, black 8%);
+}
+
+.side-h{
+  padding:12px 14px 10px;
+  font:var(--text-label);
+  letter-spacing:.08em;
+}
+
+.tree{
+  padding:4px 8px 10px;
+}
+
+.node{
+  min-height:30px;
+  padding:4px 10px;
+  border-radius:10px;
+  color:var(--foreground-secondary);
+}
+
+.node:hover{
+  background:var(--state-hover);
+  color:var(--foreground);
+}
+
+.node.sel{
+  background:var(--state-selected);
+  color:var(--foreground);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--primary) 26%, transparent);
+}
+
+.tag,
+.pill,
+.acc-st,
+.pane-tag{
+  border-radius:999px;
+}
+
+.tag.new,
+.pill.rec,
+.acc-st.pass{
+  background:color-mix(in srgb, var(--success) 14%, transparent);
+  color:color-mix(in srgb, var(--success) 88%, white 8%);
+  border:1px solid color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+.tag.mod,
+.pill.warn{
+  background:color-mix(in srgb, var(--warning) 14%, transparent);
+  color:color-mix(in srgb, var(--warning) 92%, white 4%);
+  border:1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.pane-tag.cuda{
+  background:color-mix(in srgb, var(--warning) 14%, transparent);
+  color:color-mix(in srgb, var(--warning) 92%, white 4%);
+  border-color:color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.pane-tag.asc{
+  background:color-mix(in srgb, var(--primary) 14%, transparent);
+  color:color-mix(in srgb, var(--primary) 92%, white 4%);
+  border-color:color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.tabs,
+.edtoolbar,
+.pane-h,
+.gp-head,
+.tp-head,
+.panel-tabs{
+  background:color-mix(in srgb, var(--background-elevated) 96%, black 4%);
+}
+
+.tab{
+  color:var(--foreground-secondary);
+  border-right-color:var(--border-subtle);
+}
+
+.tab.on{
+  background:color-mix(in srgb, var(--surface-1) 88%, black 12%);
+  color:var(--foreground);
+}
+
+.tab.on:after{
+  background:var(--primary);
+}
+
+.etb-btn,
+.flow-bar .fb-btn,
+.pp-play,
+.tp-anim,
+.perf-play,
+.acc-apply{
+  min-height:var(--button-height-sm);
+  padding:0 var(--button-padding-x-sm);
+  border-radius:var(--button-radius);
+  border:1px solid var(--button-secondary-border);
+  background:var(--button-secondary-bg);
+  color:var(--button-secondary-fg);
+  font:var(--button-font);
+  box-shadow:var(--button-secondary-shadow);
+  transition:background var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default);
+}
+
+.etb-btn:hover,
+.flow-bar .fb-btn:hover,
+.pp-play:hover,
+.tp-anim:hover,
+.perf-play:hover,
+.acc-apply:hover{
+  background:var(--button-secondary-bg-hover);
+  border-color:var(--border-default);
+  color:var(--foreground);
+  transform:translateY(-1px);
+}
+
+.etb-btn.on,
+.flow-bar .fb-btn.on{
+  background:var(--button-solid-bg);
+  border-color:transparent;
+  color:var(--button-solid-fg);
+  box-shadow:none;
+}
+
+.run{
+  min-height:var(--button-height-lg);
+  border-radius:var(--button-radius);
+  padding:0 var(--button-padding-x-lg);
+  background:var(--button-solid-bg);
+  color:var(--button-solid-fg);
+  border:1px solid transparent;
+  box-shadow:none;
+  font:600 13px/1 var(--font-sans);
+}
+
+.run:hover{
+  background:var(--button-solid-bg-hover);
+  filter:none;
+}
+
+.run:disabled{
+  opacity:var(--button-disabled-opacity);
+}
+
+.run.ghost{
+  background:var(--button-secondary-bg);
+  border-color:var(--button-secondary-border);
+  color:var(--button-secondary-fg);
+}
+
+.codewrap,
+.diffpane,
+.tilingpane,
+.pipepane,
+.graphpane,
+.flowpane,
+.accpane,
+.perfpane{
+  background:color-mix(in srgb, var(--surface-1) 88%, black 12%);
+}
+
+.codewrap,
+.diffpane,
+.tilingpane,
+.pipepane,
+.graphpane{
+  border-left-color:var(--border-subtle);
+}
+
+.gutter{
+  background:color-mix(in srgb, var(--surface-1) 88%, black 12%);
+  color:var(--foreground-muted);
+  border-right-color:var(--border-subtle);
+}
+
+.codelines{
+  color:var(--foreground);
+}
+
+.legend,
+.gp-detail,
+.flow-bar{
+  border-color:var(--border-subtle);
+  background:color-mix(in srgb, var(--background-elevated) 94%, black 6%);
+}
+
+.gp-detail,
+.prob .pf,
+.acc-card .ac-k,
+.perf-tune .pt-item .pv,
+.cmp .cl,
+.cmp .brl,
+.sbar-cap,
+.util .ul,
+.plabels,
+.stepcard,
+.sc-body,
+.opt .ot span,
+.flow-bar .fb-step{
+  color:var(--foreground-secondary);
+}
+
+.panel{
+  background:color-mix(in srgb, var(--background-elevated) 96%, black 4%);
+}
+
+.panel-tabs{
+  min-height:38px;
+}
+
+.ptab{
+  min-height:28px;
+  display:inline-flex;
+  align-items:center;
+  border-bottom:none;
+  border-radius:999px;
+  color:var(--foreground-secondary);
+  text-transform:none;
+  letter-spacing:0;
+}
+
+.ptab.on{
+  background:var(--state-selected);
+  color:var(--foreground);
+}
+
+.ptab .cnt{
+  background:var(--surface-disabled);
+  color:var(--foreground-secondary);
+}
+
+.term,
+.probs,
+.flowpane,
+.accpane,
+.perfpane{
+  color:var(--foreground);
+}
+
+.wizard{
+  background:color-mix(in srgb, var(--background-elevated) 94%, black 6%);
+}
+
+.wz-h,
+.wz-foot{
+  border-color:var(--border-subtle);
+  background:transparent;
+}
+
+.wz-h .kick{
+  color:var(--primary);
+}
+
+.stepcard,
+.riskcard,
+.opt,
+.opmap,
+.acc-kpi,
+.perf-kpi,
+.acc-card,
+.perf-reg,
+.perf-tune,
+.swim,
+.tl-rows,
+.tp-metric,
+.pp-metric,
+.notif{
+  background:var(--card-bg);
+  border:1px solid var(--card-border);
+  box-shadow:none;
+}
+
+.stepcard.cur-card,
+.opt.on{
+  border-color:color-mix(in srgb, var(--primary) 30%, transparent);
+  background:color-mix(in srgb, var(--card-bg) 84%, var(--state-selected));
+}
+
+.sc-n{
+  background:color-mix(in srgb, var(--primary) 14%, transparent);
+  color:color-mix(in srgb, var(--primary) 92%, white 4%);
+}
+
+.opt:hover,
+.tp-opt:hover,
+.prob:hover{
+  border-color:var(--border-default);
+  background:var(--state-hover);
+}
+
+.opt .rd{
+  border-color:var(--border-default);
+}
+
+.opt.on .rd{
+  border-color:var(--primary);
+}
+
+.tp-opt,
+.tp-metric,
+.pp-metric,
+.acc-kpi,
+.perf-kpi,
+.acc-table,
+.opmap,
+.perf-tune,
+.acc-fix{
+  border-color:var(--card-border);
+}
+
+.tp-opt.on{
+  border-color:color-mix(in srgb, var(--primary) 30%, transparent);
+  background:color-mix(in srgb, var(--surface-1) 82%, var(--state-selected));
+}
+
+.acc-card.ok,
+.perf-reg{
+  border-color:color-mix(in srgb, var(--success) 30%, transparent);
+  background:color-mix(in srgb, var(--card-bg) 86%, color-mix(in srgb, var(--success) 10%, transparent));
+}
+
+.acc-card,
+.riskcard{
+  border-color:color-mix(in srgb, var(--danger) 28%, transparent);
+  background:color-mix(in srgb, var(--card-bg) 88%, color-mix(in srgb, var(--danger) 8%, transparent));
+}
+
+.acc-st.fail{
+  background:color-mix(in srgb, var(--danger) 14%, transparent);
+  color:color-mix(in srgb, var(--danger) 92%, white 4%);
+  border:1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.acc-st.fixed{
+  background:color-mix(in srgb, var(--primary) 14%, transparent);
+  color:color-mix(in srgb, var(--primary) 92%, white 4%);
+  border:1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.statusbar{
+  min-height:28px;
+  background:color-mix(in srgb, var(--background-elevated) 96%, black 4%);
+  color:var(--foreground-secondary);
+  border-top:1px solid var(--border-subtle);
+}
+
+.statusbar .s{
+  color:inherit;
+}
+
+.notif{
+  border-left:3px solid var(--primary);
+}
+
+.notif.ok{
+  border-left-color:var(--success);
+}
+
+.notif.warn{
+  border-left-color:var(--warning);
+}
+
+.notif b{
+  color:var(--foreground);
+}
+
+.notif span{
+  color:var(--foreground-secondary);
 }
 </style>
 </head>
